@@ -66,24 +66,11 @@ This service is deployed as a **Cloud Run service** that is triggered by **Cloud
 
 ## Testing
 
-- **Unit Tests**: Fast, isolated tests that do not require external services
-- **Integration Tests**: Tests that use the BigQuery emulator to validate interactions with BigQuery
-
 Integration tests automatically start and manage a BigQuery emulator container using `testcontainers`. The emulator runs in Docker and provides a local BigQuery API endpoint for testing.
 
-Alternatively, you can run the BigQuery emulator manually using:
+If you need to inspect containers for debugging, you can keep them by setting an environment variable:
 ```bash
-make docker-up    # Start emulator container
-make docker-down  # Stop emulator container
+make test-integration
 ```
 
 See `Makefile` for all available commands (`make help`).
-
-## Deployment
-
-This service is designed to be deployed to GCP Cloud Run and configured to receive messages from a Cloud Pub/Sub subscription. Ensure proper IAM permissions are configured for:
-
-- Cloud Pub/Sub message consumption
-- Cloud SQL access (if required)
-- Cloud Monitoring metric publishing
-

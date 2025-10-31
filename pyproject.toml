@@ -44,6 +44,9 @@ addopts = [
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
 ]
+filterwarnings = [
+    "ignore::DeprecationWarning:testcontainers.core.waiting_utils",
+]
 
 [tool.ruff]
 line-length = 100

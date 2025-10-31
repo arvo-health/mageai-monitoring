@@ -14,7 +14,7 @@ test: ## Run unit tests
 	uv run pytest tests/ -v -m "not integration"
 
 test-integration: ## Run integration tests (requires Docker)
-	uv run pytest tests_integration/ -v -m integration
+	uv run pytest tests_integration/ -v -m integration -s --no-cov
 
 test-all: ## Run all tests (unit + integration)
 	uv run pytest tests/ tests_integration/ -v
@@ -28,12 +28,6 @@ format: ## Format code with black and ruff
 
 typecheck: ## Run type checking
 	uv run mypy src/
-
-docker-up: ## Start BigQuery emulator container (optional, testcontainers manages containers automatically)
-	docker-compose up -d bigquery-emulator
-
-docker-down: ## Stop BigQuery emulator container
-	docker-compose down
 
 clean: ## Clean generated files and caches
 	find . -type d -name "__pycache__" -exec rm -r {} +

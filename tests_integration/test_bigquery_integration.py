@@ -2,6 +2,7 @@
 
 import pytest
 from google.cloud import bigquery
+from google.cloud.exceptions import NotFound
 
 
 @pytest.mark.integration
@@ -18,22 +19,31 @@ def test_bigquery_connection(bigquery_client):
 @pytest.mark.integration
 def test_bigquery_dataset_creation(bigquery_client):
     """Test creating a dataset in the BigQuery emulator."""
-    dataset_id = "test_dataset"
+    dataset_id = "test_dataset_creation"
     
-    # Create dataset
-    dataset = bigquery.Dataset(f"{bigquery_client.project}.{dataset_id}")
-    dataset.location = "US"
-    created_dataset = bigquery_client.create_dataset(dataset, exists_ok=True)
-    
-    assert created_dataset is not None
-    assert created_dataset.dataset_id == dataset_id
-    
-    # Clean up
-    bigquery_client.delete_dataset(
-        created_dataset.dataset_id, 
-        delete_contents=True, 
-        not_found_ok=True
-    )
+    try:
+        # Create dataset
+        dataset = bigquery.Dataset(f"{bigquery_client.project}.{dataset_id}")
+        dataset.location = "US"
+        
+        # Create with timeout handling
+        created_dataset = bigquery_client.create_dataset(dataset, exists_ok=True, timeout=10)
+        
+        assert created_dataset is not None
+        assert created_dataset.dataset_id == dataset_id
+        
+    finally:
+        # Clean up - use not_found_ok to avoid errors if already deleted
+        try:
+            bigquery_client.delete_dataset(
+                dataset_id,
+                delete_contents=True,
+                not_found_ok=True,
+                timeout=10
+            )
+        except Exception:
+            # Ignore cleanup errors
+            pass
 
 
 @pytest.mark.integration
