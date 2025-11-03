@@ -2,7 +2,9 @@
 
 import os
 import platform
+from unittest.mock import MagicMock
 import pytest
+from tenacity import retry, stop_after_attempt, wait_exponential
 from google.cloud import bigquery
 from testcontainers.core.container import DockerContainer
 
@@ -32,19 +34,22 @@ def bigquery_emulator():
     
     container.start()
     
-    # Get connection info once and cache it to avoid repeated get_exposed_port() calls
-    # which can hang on subsequent calls
-    # Use port 9050 for REST API (which the Python client uses)
-    emulator_host = container.get_container_host_ip()
-    emulator_port = container.get_exposed_port(9050)
+    # Wait for container to be ready and port mapping to be available
+    @retry(
+        stop=stop_after_attempt(10),
+        wait=wait_exponential(multiplier=0.5, min=0.5, max=10)
+    )
+    def get_container_ports():
+        """Get container ports with retry logic."""
+        return container.get_container_host_ip(), container.get_exposed_port(9050)
+    
+    emulator_host, emulator_port = get_container_ports()
     
     yield {
         "container": container,
         "host": emulator_host,
         "port": emulator_port,
     }
-    
-    container.stop()
 
 
 @pytest.fixture(scope="function")
@@ -78,3 +83,117 @@ def bigquery_client(bigquery_emulator):
     
     yield client
 
+
+@pytest.fixture(scope="function")
+def mock_monitoring_client(monkeypatch):
+    """
+    Fixture that provides a mocked Monitoring client for integration testing.
+    
+    Since Google Cloud Monitoring doesn't have an official emulator,
+    we use a mock that captures metric emission calls. This allows us to:
+    - Verify that metrics are called with correct parameters
+    - Test the full integration flow without hitting production GCP
+    - Validate metric structure, labels, and values
+    
+    Best practice: This approach provides confidence that metrics will be
+    correctly formatted when deployed, while avoiding the complexity and
+    cost of using real GCP projects for integration tests.
+    """
+    # Import here to avoid import errors at module level
+    from google.cloud import monitoring_v3
+    
+    mock_client = MagicMock(spec=monitoring_v3.MetricServiceClient)
+    
+    # Track all calls to create_time_series for assertions
+    mock_client.captured_calls = []
+    
+    def capture_create_time_series(name, time_series):
+        """Capture and store metric calls for later inspection."""
+        call_data = {
+            "project_name": name,
+            "time_series": list(time_series),
+        }
+        mock_client.captured_calls.append(call_data)
+        # Return None (successful call)
+        return None
+    
+    mock_client.create_time_series.side_effect = capture_create_time_series
+    
+    # Patch the global monitoring_client in main.py
+    import main
+    monkeypatch.setattr(main, "monitoring_client", mock_client)
+    
+    yield mock_client
+    
+    # Reset captured calls after test
+    mock_client.captured_calls = []
+
+
+@pytest.fixture(scope="function")
+def sample_pubsub_payload():
+    """
+    Fixture that provides a sample Pub/Sub payload for testing.
+    
+    This represents a typical Mage.ai pipeline run event.
+    """
+    return {
+        "source_timestamp": "2024-01-15T10:30:00Z",
+        "payload": {
+            "pipeline_uuid": "test_pipeline_123",
+            "status": "COMPLETED",
+            "variables": {
+                "partner": "test_partner",
+                "unprocessable_claims_input_table": "test_dataset.test_table",
+            },
+        },
+    }
+
+
+@pytest.fixture(scope="function")
+def flask_app():
+    """
+    Fixture that provides a Flask application context for testing.
+    
+    Cloud Run functions using Flask's make_response require an app context.
+    """
+    from flask import Flask
+    
+    app = Flask(__name__)
+    with app.app_context():
+        yield app
+
+
+@pytest.fixture(scope="function")
+def sample_cloud_event(sample_pubsub_payload):
+    """
+    Fixture that provides a sample CloudEvent for testing.
+    
+    Simulates the CloudEvent structure from Pub/Sub trigger.
+    """
+    import base64
+    import json
+    from cloudevents.http import CloudEvent
+    
+    # Encode payload as base64 (as Pub/Sub does)
+    encoded_data = base64.b64encode(
+        json.dumps(sample_pubsub_payload).encode("utf-8")
+    ).decode("utf-8")
+    
+    # Create CloudEvent structure
+    attributes = {
+        "type": "google.cloud.pubsub.topic.v1.messagePublished",
+        "source": "//pubsub.googleapis.com/projects/test-project/topics/test-topic",
+        "specversion": "1.0",
+        "id": "test-event-id",
+    }
+    
+    data = {
+        "message": {
+            "data": encoded_data,
+            "messageId": "test-message-id",
+            "publishTime": "2024-01-15T10:30:00Z",
+        }
+    }
+    
+    event = CloudEvent(attributes, data)
+    return event
