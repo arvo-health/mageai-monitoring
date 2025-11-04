@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-integration test-all lint format typecheck clean docker-up docker-down
+.PHONY: help install install-dev test lint format typecheck clean
 
 help: ## Show this help message
 	@echo "Available commands:"
@@ -10,21 +10,15 @@ install: ## Install production dependencies
 install-dev: ## Install development dependencies
 	uv sync --all-extras
 
-test: ## Run unit tests
-	uv run pytest tests/ -v -m "not integration"
-
-test-integration: ## Run integration tests (requires Docker)
-	uv run pytest tests_integration/ -v -m integration -s --no-cov
-
-test-all: ## Run all tests (unit + integration)
-	uv run pytest tests/ tests_integration/ -v
+test: ## Run integration tests (requires Docker)
+	uv run pytest tests_integration/ -v -m integration -s
 
 lint: ## Run linting checks
-	uv run ruff check src/ tests/ tests_integration/
+	uv run ruff check src/ tests_integration/
 
 format: ## Format code with black and ruff
-	uv run black src/ tests/ tests_integration/
-	uv run ruff check --fix src/ tests/ tests_integration/
+	uv run black src/ tests_integration/
+	uv run ruff check --fix src/ tests_integration/
 
 typecheck: ## Run type checking
 	uv run mypy src/
