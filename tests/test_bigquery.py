@@ -1,6 +1,9 @@
 """Integration tests for BigQuery interactions."""
 
+import base64
+import json
 import pytest
+from cloudevents.http import CloudEvent
 from google.cloud import bigquery
 
 
