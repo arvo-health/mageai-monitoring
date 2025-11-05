@@ -6,10 +6,10 @@ from cloudevents.http import CloudEvent
 from google.cloud import monitoring_v3
 from google.cloud import bigquery
 
-from src.dispatcher import HandlerDispatcher
-from src.handlers.pipeline_run import PipelineRunHandler
-from src.handlers.pre_filtered_approval import PreFilteredApprovalHandler
-from src.handlers.pre_filtered_wrangling import PreFilteredWranglingHandler
+from dispatcher import HandlerDispatcher
+from handlers.pipeline_run import PipelineRunHandler
+from handlers.pre_filtered_approval import PreFilteredApprovalHandler
+from handlers.pre_filtered_wrangling import PreFilteredWranglingHandler
 
 # --- Configuration ---
 RUN_PROJECT_ID = "arvo-eng-prd"  # Cloud Run project (for metrics)

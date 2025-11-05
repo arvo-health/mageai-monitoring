@@ -14,14 +14,14 @@ test: ## Run integration tests (requires Docker)
 	uv run pytest tests/ -v -m integration -s
 
 lint: ## Run linting checks
-	uv run ruff check src/ tests/
+	uv run ruff check .
 
 format: ## Format code with black and ruff
-	uv run black src/ tests/
-	uv run ruff check --fix src/ tests/
+	uv run black .
+	uv run ruff check --fix .
 
 typecheck: ## Run type checking
-	uv run mypy src/
+	uv run mypy .
 
 clean: ## Clean generated files and caches
 	find . -type d -name "__pycache__" -exec rm -r {} +

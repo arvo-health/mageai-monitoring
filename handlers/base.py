@@ -1,7 +1,7 @@
 """Base handler class and custom exceptions."""
 
 from abc import ABC, abstractmethod
-from cloudevents.http import CloudEvent
+from typing import Dict
 
 
 class HandlerBadRequestError(Exception):
@@ -16,12 +16,12 @@ class Handler(ABC):
     """Base class for all event handlers."""
     
     @abstractmethod
-    def match(self, cloud_event: CloudEvent) -> bool:
+    def match(self, decoded_message: Dict) -> bool:
         """
         Determine if this handler should process the event.
         
         Args:
-            cloud_event: The raw CloudEvent to check
+            decoded_message: The decoded message dictionary to check
             
         Returns:
             True if this handler should process the event, False otherwise
@@ -29,12 +29,12 @@ class Handler(ABC):
         pass
     
     @abstractmethod
-    def handle(self, cloud_event: CloudEvent) -> None:
+    def handle(self, decoded_message: Dict) -> None:
         """
         Process the event.
         
         Args:
-            cloud_event: The raw CloudEvent
+            decoded_message: The decoded message dictionary
             
         Raises:
             HandlerBadRequestError: For 400 errors with a specific message

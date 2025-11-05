@@ -6,15 +6,13 @@ BigQuery to aggregate claim values and emits metrics that track the total
 value of claims that were filtered during the pre-processing stage.
 """
 
-import base64
-import json
 from datetime import datetime
-from cloudevents.http import CloudEvent
+from typing import Dict
 from google.cloud import monitoring_v3
 from google.cloud import bigquery
 
-from src.handlers.base import Handler, HandlerBadRequestError
-from src.metrics import emit_gauge_metric
+from handlers.base import Handler, HandlerBadRequestError
+from metrics import emit_gauge_metric
 
 
 class PreFilteredApprovalHandler(Handler):
@@ -50,7 +48,7 @@ class PreFilteredApprovalHandler(Handler):
         self.run_project_id = run_project_id
         self.data_project_id = data_project_id
     
-    def match(self, cloud_event: CloudEvent) -> bool:
+    def match(self, decoded_message: Dict) -> bool:
         """
         Determine if this handler should process the event.
         
@@ -58,23 +56,13 @@ class PreFilteredApprovalHandler(Handler):
         pipeline, which triggers the calculation of pre-processing filter metrics.
         
         Args:
-            cloud_event: The raw CloudEvent to check
+            decoded_message: The decoded message dictionary to check
             
         Returns:
             True if this is a pipesv2_approval pipeline completion event,
             False otherwise
         """
-        message = cloud_event.data.get("message", {})
-        data = message.get("data")
-        
-        if not data:
-            return False
-        
-        # Decode and parse to check pipeline details
-        decoded = base64.b64decode(data).decode("utf-8")
-        payload = json.loads(decoded)
-        
-        pl = payload.get("payload", {})
+        pl = decoded_message.get("payload", {})
         pipeline_uuid = pl.get("pipeline_uuid")
         pipeline_status = pl.get("status")
         
@@ -83,7 +71,7 @@ class PreFilteredApprovalHandler(Handler):
             and pipeline_status == "COMPLETED"
         )
     
-    def handle(self, cloud_event: CloudEvent) -> None:
+    def handle(self, decoded_message: Dict) -> None:
         """
         Calculate pre-processing filter metrics and emit to Cloud Monitoring.
         
@@ -93,21 +81,14 @@ class PreFilteredApprovalHandler(Handler):
         filtered claims value to the total value of processable claims.
         
         Args:
-            cloud_event: The raw CloudEvent containing pipeline completion data
+            decoded_message: The decoded message dictionary containing pipeline completion data
             
         Raises:
             HandlerBadRequestError: If the required input table variables
                 (unprocessable_claims_input_table or processable_claims_input_table)
                 are not present in the event
         """
-        # Parse the event (reuse logic from match() but more thoroughly)
-        message = cloud_event.data.get("message", {})
-        data = message.get("data")
-        
-        decoded = base64.b64decode(data).decode("utf-8")
-        payload = json.loads(decoded)
-        
-        pl = payload["payload"]
+        pl = decoded_message["payload"]
         variables = pl.get("variables", {})
         
         # Verify we're still handling the right event (defensive check)
@@ -181,7 +162,7 @@ class PreFilteredApprovalHandler(Handler):
         
         # Parse timestamp
         source_timestamp = datetime.fromisoformat(
-            payload["source_timestamp"].replace("Z", "+00:00")
+            decoded_message["source_timestamp"].replace("Z", "+00:00")
         )
         
         # Emit metric representing total value of claims filtered in pre-processing

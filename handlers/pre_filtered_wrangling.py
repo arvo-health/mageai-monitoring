@@ -7,12 +7,12 @@ value of claims that were filtered during the pre-processing stage.
 """
 
 from datetime import datetime
-from cloudevents.http import CloudEvent
+from typing import Dict
 from google.cloud import monitoring_v3
 from google.cloud import bigquery
 
-from src.handlers.base import Handler, HandlerBadRequestError
-from src.metrics import emit_gauge_metric
+from handlers.base import Handler, HandlerBadRequestError
+from metrics import emit_gauge_metric
 
 
 class PreFilteredWranglingHandler(Handler):
@@ -48,7 +48,7 @@ class PreFilteredWranglingHandler(Handler):
         self.run_project_id = run_project_id
         self.data_project_id = data_project_id
     
-    def match(self, cloud_event: CloudEvent) -> bool:
+    def match(self, decoded_message: Dict) -> bool:
         """
         Determine if this handler should process the event.
         
@@ -56,14 +56,13 @@ class PreFilteredWranglingHandler(Handler):
         pipeline, which triggers the calculation of pre-processing filter metrics.
         
         Args:
-            cloud_event: The raw CloudEvent to check
+            decoded_message: The decoded message dictionary to check
             
         Returns:
             True if this is a pipesv2_wrangling pipeline completion event,
             False otherwise
         """
-        # Wrangling events have payload directly in cloud_event.data
-        payload = cloud_event.data.get("payload")
+        payload = decoded_message.get("payload")
         
         if not payload:
             return False
@@ -76,7 +75,7 @@ class PreFilteredWranglingHandler(Handler):
             and pipeline_status == "COMPLETED"
         )
     
-    def handle(self, cloud_event: CloudEvent) -> None:
+    def handle(self, decoded_message: Dict) -> None:
         """
         Calculate pre-processing filter metrics and emit to Cloud Monitoring.
         
@@ -86,15 +85,14 @@ class PreFilteredWranglingHandler(Handler):
         filtered claims value to the total value of processable claims.
         
         Args:
-            cloud_event: The raw CloudEvent containing pipeline completion data
+            decoded_message: The decoded message dictionary containing pipeline completion data
             
         Raises:
             HandlerBadRequestError: If the required input table variables
                 (refined_unprocessable_claims_output_table or refined_processable_claims_output_table)
                 are not present in the event
         """
-        # Parse the event
-        payload = cloud_event.data.get("payload")
+        payload = decoded_message.get("payload")
         
         if not payload:
             raise HandlerBadRequestError(
@@ -174,7 +172,7 @@ class PreFilteredWranglingHandler(Handler):
         
         # Parse timestamp
         source_timestamp = datetime.fromisoformat(
-            cloud_event.data["source_timestamp"].replace("Z", "+00:00")
+            decoded_message["source_timestamp"].replace("Z", "+00:00")
         )
         
         # Emit metric representing total value of claims filtered in pre-processing

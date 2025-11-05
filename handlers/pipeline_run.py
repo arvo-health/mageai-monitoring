@@ -7,14 +7,12 @@ identifier, execution status, and partner information, enabling monitoring
 and analysis of pipeline execution patterns across the system.
 """
 
-import base64
-import json
 from datetime import datetime
-from cloudevents.http import CloudEvent
+from typing import Dict
 from google.cloud import monitoring_v3
 
-from src.handlers.base import Handler, HandlerBadRequestError
-from src.metrics import emit_gauge_metric
+from handlers.base import Handler, HandlerBadRequestError
+from metrics import emit_gauge_metric
 
 
 class PipelineRunHandler(Handler):
@@ -34,47 +32,34 @@ class PipelineRunHandler(Handler):
         self.monitoring_client = monitoring_client
         self.run_project_id = run_project_id
     
-    def match(self, cloud_event: CloudEvent) -> bool:
+    def match(self, decoded_message: Dict) -> bool:
         """
         Match all valid pipeline events.
         
         This handler processes all events that have the expected structure.
         Returns True if the event can be parsed, False otherwise.
         """
-        message = cloud_event.data.get("message", {})
-        data = message.get("data")
-        if not data:
+        if "payload" not in decoded_message or "source_timestamp" not in decoded_message:
             return False
         
-        decoded = base64.b64decode(data).decode("utf-8")
-        payload = json.loads(decoded)
-        
-        if "payload" not in payload or "source_timestamp" not in payload:
-            return False
-        
-        pl = payload["payload"]
+        pl = decoded_message["payload"]
         if "pipeline_uuid" not in pl or "status" not in pl:
             return False
         
         return True
     
-    def handle(self, cloud_event: CloudEvent) -> None:
+    def handle(self, decoded_message: Dict) -> None:
         """
         Emit the basic pipeline run metric.
         
         Args:
-            cloud_event: The raw CloudEvent
+            decoded_message: The decoded message dictionary
             
         Raises:
             HandlerBadRequestError: If the required 'partner' variable is
                 not present in the event payload
         """
-        message = cloud_event.data.get("message", {})
-        data = message.get("data")
-        
-        decoded = base64.b64decode(data).decode("utf-8")
-        payload = json.loads(decoded)
-        pl = payload["payload"]
+        pl = decoded_message["payload"]
         variables = pl.get("variables", {})
         
         labels = {
@@ -90,7 +75,7 @@ class PipelineRunHandler(Handler):
         labels["partner"] = str(partner_value)
         
         source_timestamp = datetime.fromisoformat(
-            payload["source_timestamp"].replace("Z", "+00:00")
+            decoded_message["source_timestamp"].replace("Z", "+00:00")
         )
         
         emit_gauge_metric(

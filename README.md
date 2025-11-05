@@ -55,7 +55,10 @@ This service is deployed as a **Cloud Run service** that is triggered by **Cloud
 
 ```
 .
-├── src/                 # Source code
+├── handlers/           # Handler modules for processing cloud events
+├── dispatcher.py       # Handler dispatcher for routing events
+├── metrics.py          # Utility functions for emitting metrics
+├── main.py             # Cloud Run entry point
 ├── tests/               # Integration tests (with BigQuery emulator)
 ├── pyproject.toml       # Project configuration
 ├── Makefile            # Common commands
