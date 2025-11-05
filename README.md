@@ -56,11 +56,9 @@ This service is deployed as a **Cloud Run service** that is triggered by **Cloud
 ```
 .
 ├── src/                 # Source code
-├── tests/               # Unit tests
-├── tests_integration/   # Integration tests (with BigQuery emulator)
+├── tests/               # Integration tests (with BigQuery emulator)
 ├── pyproject.toml       # Project configuration
 ├── Makefile            # Common commands
-├── docker-compose.yml  # BigQuery emulator service (optional, for local dev)
 └── README.md           # This file
 ```
 
@@ -70,7 +68,7 @@ Integration tests automatically start and manage a BigQuery emulator container u
 
 If you need to inspect containers for debugging, you can keep them by setting an environment variable:
 ```bash
-make test-integration
+make test
 ```
 
 See `Makefile` for all available commands (`make help`).

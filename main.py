@@ -9,6 +9,7 @@ from google.cloud import bigquery
 from src.dispatcher import HandlerDispatcher
 from src.handlers.pipeline_run import PipelineRunHandler
 from src.handlers.pre_filtered_approval import PreFilteredApprovalHandler
+from src.handlers.pre_filtered_wrangling import PreFilteredWranglingHandler
 
 # --- Configuration ---
 RUN_PROJECT_ID = "arvo-eng-prd"  # Cloud Run project (for metrics)
@@ -30,6 +31,12 @@ def log_and_metric_pubsub(cloud_event: CloudEvent):
                 run_project_id=RUN_PROJECT_ID,
             ),
             PreFilteredApprovalHandler(
+                monitoring_client=monitoring_client,
+                bq_client=bq_client,
+                run_project_id=RUN_PROJECT_ID,
+                data_project_id=DATA_PROJECT_ID,
+            ),
+            PreFilteredWranglingHandler(
                 monitoring_client=monitoring_client,
                 bq_client=bq_client,
                 run_project_id=RUN_PROJECT_ID,
