@@ -9,6 +9,8 @@ from google.cloud.monitoring_v3 import Point, TimeSeries
 
 from config import Config
 
+from config import Config
+
 
 def emit_gauge_metric(
     *,
