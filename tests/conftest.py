@@ -109,10 +109,24 @@ def mock_monitoring_client(monkeypatch):
     cost of using real GCP projects for integration tests.
     """
     from google.cloud import monitoring_v3
+    import metrics
+    import main
+    import os
     
     mock_client = MagicMock(spec=monitoring_v3.MetricServiceClient)
     
+    # Set the expected project ID for tests
+    monkeypatch.setenv("CLOUD_RUN_PROJECT_ID", "arvo-eng-prd")
+    
+    # Monkeypatch both the class and the factory function to return our mock
     monkeypatch.setattr(monitoring_v3, "MetricServiceClient", lambda: mock_client)
+    # Ensure create_monitoring_client returns our mock regardless of local_mode
+    monkeypatch.setattr(metrics, "create_monitoring_client", lambda config: mock_client)
+    # Also patch _create_logging_monitoring_client to return our mock
+    monkeypatch.setattr(metrics, "_create_logging_monitoring_client", lambda: mock_client)
+    
+    # Reset the global dispatcher in main.py so it gets reinitialized with our mock
+    monkeypatch.setattr(main, "_dispatcher", None)
     
     yield mock_client
 

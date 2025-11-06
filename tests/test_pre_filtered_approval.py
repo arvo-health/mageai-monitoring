@@ -165,7 +165,24 @@ def test_pre_filtered_approval_handler_happy_path(
         assert status_code == 204
         
         # Assert: Expected metric calls were made
-        mock_monitoring_client.create_time_series.assert_has_calls(expected_calls)
+        # Check that our expected calls are in the call list (may have extra calls from PipelineRunHandler)
+        actual_calls = mock_monitoring_client.create_time_series.call_args_list
+        
+        # Verify each expected call exists in the actual calls
+        for expected_call in expected_calls:
+            expected_name = expected_call.kwargs["name"]
+            expected_time_series_matcher = expected_call.kwargs["time_series"]
+            
+            # Find matching call
+            found = False
+            for actual_call in actual_calls:
+                if actual_call.kwargs.get("name") == expected_name:
+                    actual_time_series = actual_call.kwargs.get("time_series", [])
+                    if expected_time_series_matcher == actual_time_series:
+                        found = True
+                        break
+            
+            assert found, f"Expected call not found: name={expected_name}, time_series={expected_time_series_matcher}"
         
     finally:
         # Clean up

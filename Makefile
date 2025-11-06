@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test lint format typecheck clean
+.PHONY: help install install-dev test lint format typecheck clean local-up local-down local-seed local-run local-test
 
 help: ## Show this help message
 	@echo "Available commands:"
@@ -31,4 +31,34 @@ clean: ## Clean generated files and caches
 	find . -type d -name ".mypy_cache" -exec rm -r {} +
 	find . -type d -name "htmlcov" -exec rm -r {} +
 	rm -rf .ruff_cache
+
+local-up: ## Start BigQuery emulator via docker-compose and seed with test data
+	docker-compose up -d bigquery-emulator
+	@echo "Waiting for BigQuery emulator to be ready..."
+	@sleep 5
+	@echo "Seeding BigQuery with test data..."
+	@BIGQUERY_PROJECT_ID=test-project uv run python scripts/seed_bigquery.py || \
+		(echo "Warning: Seeding failed. The emulator may still be starting. Try 'make local-seed' manually."; exit 0)
+	@echo "BigQuery emulator started and seeded on http://localhost:9050"
+
+local-seed: ## Seed BigQuery emulator with test data (requires emulator to be running)
+	@echo "Seeding BigQuery with test data..."
+	@BIGQUERY_PROJECT_ID=test-project uv run python scripts/seed_bigquery.py
+
+local-down: ## Stop BigQuery emulator
+	docker-compose down
+
+local-run: ## Run the service in local mode (requires BigQuery emulator)
+	@if ! docker-compose ps | grep -q "bigquery-emulator.*Up"; then \
+		echo "Starting BigQuery emulator..."; \
+		$(MAKE) local-up; \
+	fi
+	LOCAL_MODE=true uv run functions-framework --target=log_and_metric_pubsub --port=8080
+
+local-test: ## Test HTTP endpoint with example CloudEvent payload (requires service running)
+	@echo "Testing local endpoint with example payload..."
+	@curl -X POST http://localhost:8080 \
+		-H "Content-Type: application/json" \
+		-d @test_payload.json || \
+		(echo "Error: Make sure the service is running (make local-run) and test_payload.json exists"; exit 1)
 

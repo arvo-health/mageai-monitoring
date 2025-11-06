@@ -26,7 +26,7 @@ class PipelineRunHandler(Handler):
         Initialize the handler.
         
         Args:
-            monitoring_client: GCP Monitoring client
+            monitoring_client: Monitoring client (GCP or logged)
             run_project_id: Project ID for metric emission
         """
         self.monitoring_client = monitoring_client

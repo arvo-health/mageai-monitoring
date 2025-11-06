@@ -8,8 +8,8 @@ value of claims that were filtered during the pre-processing stage.
 
 from datetime import datetime
 from typing import Dict
-from google.cloud import monitoring_v3
 from google.cloud import bigquery
+from google.cloud import monitoring_v3
 
 from handlers.base import Handler, HandlerBadRequestError
 from metrics import emit_gauge_metric
@@ -38,7 +38,7 @@ class PreFilteredApprovalHandler(Handler):
         Initialize the handler.
         
         Args:
-            monitoring_client: GCP Monitoring client
+            monitoring_client: Monitoring client (GCP or logged)
             bq_client: BigQuery client
             run_project_id: Project ID for metric emission
             data_project_id: Project ID for BigQuery data
