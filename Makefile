@@ -11,7 +11,7 @@ install-dev: ## Install development dependencies
 	uv sync --all-extras
 
 test: ## Run integration tests (requires Docker)
-	uv run pytest tests/ -v -m integration -s
+	uv run pytest tests/ -v -s
 
 lint: ## Run linting checks
 	uv run ruff check .

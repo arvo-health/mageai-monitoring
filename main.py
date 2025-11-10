@@ -78,7 +78,11 @@ def handle_cloud_event(cloud_event: CloudEvent):
         monitoring_client = create_monitoring_client(config)
         bq_client = create_bigquery_client(config)
         handlers = create_handlers(monitoring_client, bq_client, config)
-        _dispatcher = HandlerDispatcher(handlers)
+        _dispatcher = HandlerDispatcher(
+            handlers=handlers,
+            monitoring_client=monitoring_client,
+            project_id=config.cloud_run_project_id,
+        )
 
     try:
         return _dispatcher.dispatch(cloud_event)
