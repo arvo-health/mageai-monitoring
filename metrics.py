@@ -3,8 +3,9 @@
 import json
 import logging
 from datetime import datetime
+
 from google.cloud import monitoring_v3
-from google.cloud.monitoring_v3 import TimeSeries, Point
+from google.cloud.monitoring_v3 import Point, TimeSeries
 
 from config import Config
 
@@ -20,7 +21,7 @@ def emit_gauge_metric(
 ) -> None:
     """
     Emit a GAUGE metric to GCP Cloud Monitoring or log it (local mode).
-    
+
     Args:
         monitoring_client: GCP Monitoring client (may be monkey-patched for local mode)
         project_id: Project ID for metric emission
@@ -51,15 +52,14 @@ def emit_gauge_metric(
 def _create_logging_monitoring_client() -> monitoring_v3.MetricServiceClient:
     """
     Create a monitoring client with monkey-patched methods that log instead of calling GCP.
-    
+
     Returns:
         Monitoring client with logging methods
     """
     client = monitoring_v3.MetricServiceClient()
-    
+
     # Store original method
-    original_create_time_series = client.create_time_series
-    
+
     def logged_create_time_series(name: str, time_series: list) -> None:
         """Log metric data instead of sending to GCP."""
         for ts in time_series:
@@ -70,16 +70,16 @@ def _create_logging_monitoring_client() -> monitoring_v3.MetricServiceClient:
                 # Handle both string and DatetimeWithNanoseconds objects
                 if isinstance(end_time, str):
                     timestamp_str = end_time
-                elif hasattr(end_time, 'isoformat'):
+                elif hasattr(end_time, "isoformat"):
                     # Use isoformat() if available (for datetime objects)
                     timestamp_str = end_time.isoformat()
-                elif hasattr(end_time, 'ToDatetime'):
+                elif hasattr(end_time, "ToDatetime"):
                     # Convert DatetimeWithNanoseconds to datetime then ISO format
                     timestamp_str = end_time.ToDatetime().isoformat()
                 else:
                     # Fallback to string conversion
                     timestamp_str = str(end_time)
-            
+
             metric_data = {
                 "metric_type": "gauge",
                 "project_id": name.replace("projects/", ""),
@@ -90,23 +90,23 @@ def _create_logging_monitoring_client() -> monitoring_v3.MetricServiceClient:
             }
             logging.info(f"METRIC: {json.dumps(metric_data)}")
         # Don't call the original method
-    
+
     # Monkey-patch the method
     client.create_time_series = logged_create_time_series
-    
+
     return client
 
 
 def create_monitoring_client(config: Config) -> monitoring_v3.MetricServiceClient:
     """
     Create a monitoring client appropriate for the current mode.
-    
+
     In local mode, returns a client with monkey-patched methods that log.
     In production mode, returns a standard GCP Monitoring client.
-    
+
     Args:
         config: Application configuration
-        
+
     Returns:
         Monitoring client instance
     """

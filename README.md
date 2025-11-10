@@ -30,7 +30,7 @@ This service is deployed as a **Cloud Run service** that is triggered by **Cloud
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.12+
 - `uv` package manager ([installation guide](https://github.com/astral-sh/uv))
 - Docker (for BigQuery emulator in integration tests)
 
@@ -138,12 +138,12 @@ You can override these by setting environment variables before running:
 export RUN_PROJECT_ID=my-local-project
 export DATA_PROJECT_ID=test-project
 export LOCAL_MODE=true
-uv run functions-framework --target=log_and_metric_pubsub --port=8080
+uv run functions-framework --target=handle_cloud_event --port=8080
 ```
 
 Or manually run with custom settings:
 ```bash
-LOCAL_MODE=true RUN_PROJECT_ID=my-project uv run functions-framework --target=log_and_metric_pubsub --port=8080
+LOCAL_MODE=true RUN_PROJECT_ID=my-project uv run functions-framework --target=handle_cloud_event --port=8080
 ```
 
 ### Making HTTP Requests

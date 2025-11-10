@@ -3,7 +3,7 @@ name = "mageai-monitoring"
 version = "0.1.0"
 description = "GCP Cloud Run service for monitoring Mage.ai pipeline runs and emitting metrics to Cloud Monitoring"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "functions-framework>=3.5.0",
     "flask>=3.0.0",
@@ -56,18 +56,18 @@ filterwarnings = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
-ignore = []
+ignore = ["N999"]  # Ignore invalid module name (project uses hyphen in name, not underscore)
 
 [tool.black]
 line-length = 100
-target-version = ["py311"]
+target-version = ["py312"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false

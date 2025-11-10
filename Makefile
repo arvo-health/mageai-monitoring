@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test lint format typecheck clean local-up local-down local-seed local-run local-test
+.PHONY: help install install-dev test lint lint-fix format typecheck clean local-up local-down local-seed local-run local-test docker-build docker-push
 
 help: ## Show this help message
 	@echo "Available commands:"
@@ -16,8 +16,12 @@ test: ## Run integration tests (requires Docker)
 lint: ## Run linting checks
 	uv run ruff check .
 
-format: ## Format code with black and ruff
-	uv run black .
+lint-fix: ## Auto-fix linting issues
+	uv run ruff format .
+	uv run ruff check --fix --unsafe-fixes .
+
+format: ## Format code with ruff format and ruff check
+	uv run ruff format .
 	uv run ruff check --fix .
 
 typecheck: ## Run type checking
@@ -53,7 +57,7 @@ local-run: ## Run the service in local mode (requires BigQuery emulator)
 		echo "Starting BigQuery emulator..."; \
 		$(MAKE) local-up; \
 	fi
-	LOCAL_MODE=true uv run functions-framework --target=log_and_metric_pubsub --port=8080
+	LOCAL_MODE=true uv run functions-framework --target=handle_cloud_event --port=8080
 
 local-test: ## Test HTTP endpoint with example CloudEvent payload (requires service running)
 	@echo "Testing local endpoint with example payload..."
@@ -61,4 +65,18 @@ local-test: ## Test HTTP endpoint with example CloudEvent payload (requires serv
 		-H "Content-Type: application/json" \
 		-d @test_payload.json || \
 		(echo "Error: Make sure the service is running (make local-run) and test_payload.json exists"; exit 1)
+
+# Docker image configuration
+IMAGE_REGISTRY := us-docker.pkg.dev/arvo-datalake/containers/mageai-monitoring
+VERSION := $(shell awk -F'"' '/^version = / {print $$2}' pyproject.toml)
+
+docker-build: ## Build Docker image with version tag
+	@echo "Building Docker image: $(IMAGE_REGISTRY):$(VERSION)"
+	docker build --platform linux/amd64 -t $(IMAGE_REGISTRY):$(VERSION) .
+	@echo "Image built successfully: $(IMAGE_REGISTRY):$(VERSION)"
+
+docker-push: docker-build ## Build and push Docker image to registry
+	@echo "Pushing Docker image: $(IMAGE_REGISTRY):$(VERSION)"
+	docker push $(IMAGE_REGISTRY):$(VERSION)
+	@echo "Image pushed successfully: $(IMAGE_REGISTRY):$(VERSION)"
 
