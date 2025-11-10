@@ -1,12 +1,7 @@
 """Tests for HandlerDispatcher."""
 
-from unittest.mock import MagicMock, call
-
-import pytest
-from cloudevents.http import CloudEvent
-
 from dispatcher import HandlerDispatcher
-from handlers.base import Handler, HandlerBadRequestError
+from handlers.base import Handler
 
 
 class MockHandler(Handler):
@@ -50,61 +45,7 @@ class FailingMatcherHandler(Handler):
         pass
 
 
-@pytest.fixture
-def mock_monitoring_client():
-    """Fixture that provides a mocked Monitoring client."""
-    from google.cloud import monitoring_v3
-
-    return MagicMock(spec=monitoring_v3.MetricServiceClient)
-
-
-@pytest.fixture
-def sample_cloud_event():
-    """Fixture that provides a sample CloudEvent for testing."""
-    import base64
-    import json
-
-    payload = {
-        "source_timestamp": "2024-01-15T10:30:00Z",
-        "payload": {
-            "pipeline_uuid": "test_pipeline",
-            "status": "COMPLETED",
-        },
-    }
-
-    encoded_data = base64.b64encode(json.dumps(payload).encode("utf-8")).decode("utf-8")
-
-    event = CloudEvent(
-        {
-            "type": "google.cloud.pubsub.topic.v1.messagePublished",
-            "source": "//pubsub.googleapis.com/projects/test-project/topics/test-topic",
-            "specversion": "1.0",
-            "id": "test-event-id",
-        },
-        {
-            "message": {
-                "data": encoded_data,
-                "messageId": "test-message-id",
-                "publishTime": "2024-01-15T10:30:00Z",
-            }
-        },
-    )
-    return event
-
-
-@pytest.fixture
-def flask_app():
-    """Fixture that provides a Flask application context for testing."""
-    from flask import Flask
-
-    app = Flask(__name__)
-    with app.app_context():
-        yield app
-
-
-def test_dispatcher_successful_dispatch(
-    mock_monitoring_client, sample_cloud_event, flask_app
-):
+def test_dispatcher_successful_dispatch(mock_monitoring_client, sample_cloud_event, flask_app):
     """Test successful dispatch when all handlers match and execute successfully."""
     # Arrange
     handler1 = MockHandler("Handler1", should_match=True)
@@ -129,9 +70,7 @@ def test_dispatcher_successful_dispatch(
     mock_monitoring_client.create_time_series.assert_not_called()
 
 
-def test_dispatcher_matcher_error(
-    mock_monitoring_client, sample_cloud_event, flask_app
-):
+def test_dispatcher_matcher_error(mock_monitoring_client, sample_cloud_event, flask_app):
     """Test dispatcher when matcher raises an error - should return 500 and emit metric."""
     # Arrange
     failing_handler = FailingMatcherHandler("FailingHandler")
@@ -167,9 +106,7 @@ def test_dispatcher_matcher_error(
     assert dict(ts.metric.labels) == {"handler_class": "FailingMatcherHandler"}
 
 
-def test_dispatcher_handler_error(
-    mock_monitoring_client, sample_cloud_event, flask_app
-):
+def test_dispatcher_handler_error(mock_monitoring_client, sample_cloud_event, flask_app):
     """Test dispatcher when handler raises an error - should return 500 and emit metric."""
     # Arrange
     failing_handler = MockHandler(
@@ -205,4 +142,3 @@ def test_dispatcher_handler_error(
     ts = time_series_list[0]
     assert ts.metric.type == "custom.googleapis.com/handler_execution_failure"
     assert dict(ts.metric.labels) == {"handler_class": "MockHandler"}
-

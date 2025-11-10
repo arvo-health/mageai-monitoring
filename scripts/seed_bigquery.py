@@ -42,7 +42,7 @@ def wait_for_emulator(client: bigquery.Client, max_retries: int = 30, delay: flo
             return True
         except Exception as e:
             if i < max_retries - 1:
-                logger.debug(f"Emulator not ready yet (attempt {i+1}/{max_retries}): {e}")
+                logger.debug(f"Emulator not ready yet (attempt {i + 1}/{max_retries}): {e}")
                 time.sleep(delay)
             else:
                 logger.error(f"BigQuery emulator failed to become ready: {e}")

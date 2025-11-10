@@ -108,9 +108,7 @@ class HandlerDispatcher:
             except Exception as e:
                 # Accumulate matcher error instead of returning immediately
                 handler_class = handler.__class__.__name__
-                logging.error(
-                    f"Handler {handler_class} match() failed: {e}", exc_info=True
-                )
+                logging.error(f"Handler {handler_class} match() failed: {e}", exc_info=True)
                 matcher_errors.append((handler_class, e))
 
         # Accumulate errors from handlers
@@ -121,9 +119,7 @@ class HandlerDispatcher:
             except HandlerBadRequestError as e:
                 # Accumulate BadRequestError
                 handler_class = handler.__class__.__name__
-                logging.error(
-                    f"Handler {handler_class} raised BadRequestError: {e.message}"
-                )
+                logging.error(f"Handler {handler_class} raised BadRequestError: {e.message}")
                 handler_errors.append((handler_class, e, "bad_request"))
             except Exception as e:
                 # Accumulate other exceptions
@@ -160,7 +156,9 @@ class HandlerDispatcher:
         if handler_errors:
             # Check if any handler raised BadRequestError
             bad_request_errors = [
-                (handler_class, error) for handler_class, error, et in handler_errors if et == "bad_request"
+                (handler_class, error)
+                for handler_class, error, et in handler_errors
+                if et == "bad_request"
             ]
             if bad_request_errors:
                 # Return the first bad request error message
