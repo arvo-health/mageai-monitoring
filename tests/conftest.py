@@ -67,15 +67,16 @@ def bigquery_client(bigquery_emulator, monkeypatch):
     # Create client with test project
     # Configure client to use emulator endpoint explicitly
     from google.api_core import client_options
+    from google.auth.credentials import AnonymousCredentials
 
     emulator_endpoint = f"http://{emulator_host}:{emulator_port}"
     client_options_obj = client_options.ClientOptions(api_endpoint=emulator_endpoint)
 
-    # Create client without credentials to avoid auth delays
+    # Create client with anonymous credentials for emulator (no real auth needed)
     client = bigquery.Client(
         project="test-project",
         client_options=client_options_obj,
-        credentials=None,  # Emulator doesn't need real credentials
+        credentials=AnonymousCredentials(),  # Use anonymous credentials for emulator
     )
 
     # Monkeypatch bigquery.Client to always return this test client
