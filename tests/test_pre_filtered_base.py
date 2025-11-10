@@ -328,4 +328,3 @@ def test_pre_filtered_base_handler_with_wrangling_pipeline(
     finally:
         # Clean up
         bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
-

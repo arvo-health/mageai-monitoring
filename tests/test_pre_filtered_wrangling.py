@@ -99,9 +99,7 @@ def test_handle_delegates_to_base():
     }
 
     # Mock the base handler method
-    with patch.object(
-        handler, "_handle_pre_filtered_metrics"
-    ) as mock_handle_pre_filtered_metrics:
+    with patch.object(handler, "_handle_pre_filtered_metrics") as mock_handle_pre_filtered_metrics:
         handler.handle(decoded_message)
 
         # Verify it was called with the correct parameters

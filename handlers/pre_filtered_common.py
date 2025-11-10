@@ -1,6 +1,6 @@
-"""Base handler for pre-filtered handlers.
+"""Common functionality for pre-filtered handlers.
 
-This module contains the base class for handlers that calculate and emit
+This module contains shared code for handlers that calculate and emit
 pre-processing filter metrics from pipeline completion events.
 """
 
