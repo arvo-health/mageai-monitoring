@@ -10,6 +10,8 @@ from bigquery import create_bigquery_client
 from config import Config
 from dispatcher import HandlerDispatcher
 from handlers.pipeline_run import PipelineRunHandler
+from handlers.post_filtered_approval import PostFilteredApprovalHandler
+from handlers.post_filtered_selection import PostFilteredSelectionHandler
 from handlers.pre_filtered_approval import PreFilteredApprovalHandler
 from handlers.pre_filtered_wrangling import PreFilteredWranglingHandler
 from metrics import create_monitoring_client
@@ -45,6 +47,18 @@ def create_handlers(
             data_project_id=config.bigquery_project_id,
         ),
         PreFilteredWranglingHandler(
+            monitoring_client=monitoring_client,
+            bq_client=bq_client,
+            run_project_id=config.cloud_run_project_id,
+            data_project_id=config.bigquery_project_id,
+        ),
+        PostFilteredSelectionHandler(
+            monitoring_client=monitoring_client,
+            bq_client=bq_client,
+            run_project_id=config.cloud_run_project_id,
+            data_project_id=config.bigquery_project_id,
+        ),
+        PostFilteredApprovalHandler(
             monitoring_client=monitoring_client,
             bq_client=bq_client,
             run_project_id=config.cloud_run_project_id,

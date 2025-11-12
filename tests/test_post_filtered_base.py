@@ -1,4 +1,4 @@
-"""Integration tests for PreFilteredBaseHandler."""
+"""Integration tests for PostFilteredBaseHandler."""
 
 import pytest
 from cloudevents.http import CloudEvent
@@ -10,22 +10,22 @@ from tests.metrics import MetricMatcher
 
 
 @pytest.mark.integration
-def test_pre_filtered_base_handler_with_approval_pipeline(
+def test_post_filtered_base_handler_with_selection_pipeline(
     bigquery_client,
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
 ):
-    """Integration test for PreFilteredBaseHandler via approval pipeline.
+    """Integration test for PostFilteredBaseHandler via selection pipeline.
 
     This test:
     1. Creates BigQuery tables with test data
-    2. Triggers the handler with a pipesv2_approval completion event
+    2. Triggers the handler with a pipesv2_selection completion event
     3. Verifies both total and relative metrics are emitted correctly
     """
     dataset_id = "test_dataset"
-    unprocessable_table_id = "unprocessable_claims"
-    processable_table_id = "processable_claims"
+    excluded_table_id = "excluded_savings"
+    savings_table_id = "savings"
 
     # Create dataset
     dataset = bigquery.Dataset(f"{bigquery_client.project}.{dataset_id}")
@@ -33,62 +33,44 @@ def test_pre_filtered_base_handler_with_approval_pipeline(
     bigquery_client.create_dataset(dataset, exists_ok=True)
 
     try:
-        # Define table schema for claims tables
+        # Define table schema for savings tables
         schema = [
-            bigquery.SchemaField("vl_pago", "FLOAT", mode="NULLABLE"),
-        ]
-
-        # Create unprocessable claims table and insert test data
-        unprocessable_table = bigquery.Table(
-            f"{bigquery_client.project}.{dataset_id}.{unprocessable_table_id}", schema=schema
-        )
-        bigquery_client.create_table(unprocessable_table, exists_ok=True)
-
-        # Insert test data: total vl_pago = 1000.0
-        unprocessable_rows = [
-            {"vl_pago": 300.0},
-            {"vl_pago": 400.0},
-            {"vl_pago": 300.0},
-        ]
-        bigquery_client.insert_rows_json(
-            f"{bigquery_client.project}.{dataset_id}.{unprocessable_table_id}", unprocessable_rows
-        )
-
-        # Create processable claims table and insert test data
-        processable_table = bigquery.Table(
-            f"{bigquery_client.project}.{dataset_id}.{processable_table_id}", schema=schema
-        )
-        bigquery_client.create_table(processable_table, exists_ok=True)
-
-        # Insert test data: total vl_pago = 4000.0
-        processable_rows = [
-            {"vl_pago": 1000.0},
-            {"vl_pago": 1500.0},
-            {"vl_pago": 1500.0},
-        ]
-        bigquery_client.insert_rows_json(
-            f"{bigquery_client.project}.{dataset_id}.{processable_table_id}", processable_rows
-        )
-
-        # Create dummy savings tables for post-filtered handler
-        # (required but not queried by this test)
-        excluded_table_id = "excluded_savings"
-        savings_table_id = "savings"
-        savings_schema = [
             bigquery.SchemaField("vl_glosa_arvo", "FLOAT", mode="NULLABLE"),
         ]
 
+        # Create excluded savings table and insert test data
         excluded_table = bigquery.Table(
-            f"{bigquery_client.project}.{dataset_id}.{excluded_table_id}", schema=savings_schema
+            f"{bigquery_client.project}.{dataset_id}.{excluded_table_id}", schema=schema
         )
         bigquery_client.create_table(excluded_table, exists_ok=True)
 
+        # Insert test data: total vl_glosa_arvo = 500.0
+        excluded_rows = [
+            {"vl_glosa_arvo": 150.0},
+            {"vl_glosa_arvo": 200.0},
+            {"vl_glosa_arvo": 150.0},
+        ]
+        bigquery_client.insert_rows_json(
+            f"{bigquery_client.project}.{dataset_id}.{excluded_table_id}", excluded_rows
+        )
+
+        # Create savings table and insert test data
         savings_table = bigquery.Table(
-            f"{bigquery_client.project}.{dataset_id}.{savings_table_id}", schema=savings_schema
+            f"{bigquery_client.project}.{dataset_id}.{savings_table_id}", schema=schema
         )
         bigquery_client.create_table(savings_table, exists_ok=True)
 
-        # Create CloudEvent payload for pipesv2_approval pipeline completion
+        # Insert test data: total vl_glosa_arvo = 2000.0
+        savings_rows = [
+            {"vl_glosa_arvo": 500.0},
+            {"vl_glosa_arvo": 750.0},
+            {"vl_glosa_arvo": 750.0},
+        ]
+        bigquery_client.insert_rows_json(
+            f"{bigquery_client.project}.{dataset_id}.{savings_table_id}", savings_rows
+        )
+
+        # Create CloudEvent payload for pipesv2_selection pipeline completion
         event = CloudEvent(
             {
                 "type": "google.cloud.pubsub.topic.v1.messagePublished",
@@ -99,17 +81,11 @@ def test_pre_filtered_base_handler_with_approval_pipeline(
             {
                 "source_timestamp": "2024-01-15T10:30:00Z",
                 "payload": {
-                    "pipeline_uuid": "pipesv2_approval",
+                    "pipeline_uuid": "pipesv2_selection",
                     "status": "COMPLETED",
                     "variables": {
-                        "partner": "porto",
-                        "unprocessable_claims_input_table": (
-                            f"{bigquery_client.project}.{dataset_id}.{unprocessable_table_id}"
-                        ),
-                        "processable_claims_input_table": (
-                            f"{bigquery_client.project}.{dataset_id}.{processable_table_id}"
-                        ),
-                        "excluded_savings_input_table": (
+                        "partner": "athena",
+                        "excluded_savings_output_table": (
                             f"{bigquery_client.project}.{dataset_id}.{excluded_table_id}"
                         ),
                         "savings_input_table": (
@@ -122,24 +98,24 @@ def test_pre_filtered_base_handler_with_approval_pipeline(
 
         # Arrange: Declare expected metric emissions
         expected_project = "projects/arvo-eng-prd"
-        expected_labels = {"partner": "porto", "approved": "true"}
+        expected_labels = {"partner": "athena", "approved": "false"}
 
         expected_calls = [
-            # First metric: total value (300 + 400 + 300 = 1000.0)
+            # First metric: total value (150 + 200 + 150 = 500.0)
             mocker.call(
                 name=expected_project,
                 time_series=MetricMatcher(
-                    metric_type="claims/pipeline/filtered_pre/vl_pago/total",
-                    value=1000.0,
+                    metric_type="claims/pipeline/filtered_post/vl_glosa_arvo/total",
+                    value=500.0,
                     labels=expected_labels,
                 ),
             ),
-            # Second metric: relative value (1000.0 / (1000.0 + 4000.0) = 0.2)
+            # Second metric: relative value (500.0 / 2000.0 = 0.25)
             mocker.call(
                 name=expected_project,
                 time_series=MetricMatcher(
-                    metric_type="claims/pipeline/filtered_pre/vl_pago/relative",
-                    value=0.2,
+                    metric_type="claims/pipeline/filtered_post/vl_glosa_arvo/relative",
+                    value=0.25,
                     labels=expected_labels,
                 ),
             ),
@@ -183,22 +159,22 @@ def test_pre_filtered_base_handler_with_approval_pipeline(
 
 
 @pytest.mark.integration
-def test_pre_filtered_base_handler_with_wrangling_pipeline(
+def test_post_filtered_base_handler_with_approval_pipeline(
     bigquery_client,
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
 ):
-    """Integration test for PreFilteredBaseHandler via wrangling pipeline.
+    """Integration test for PostFilteredBaseHandler via approval pipeline.
 
     This test:
     1. Creates BigQuery tables with test data
-    2. Triggers the handler with a pipesv2_wrangling completion event
+    2. Triggers the handler with a pipesv2_approval completion event
     3. Verifies both total and relative metrics are emitted correctly
     """
     dataset_id = "test_dataset"
-    unprocessable_table_id = "unprocessable_claims"
-    processable_table_id = "processable_claims"
+    excluded_table_id = "excluded_savings"
+    savings_table_id = "savings"
 
     # Create dataset
     dataset = bigquery.Dataset(f"{bigquery_client.project}.{dataset_id}")
@@ -206,45 +182,62 @@ def test_pre_filtered_base_handler_with_wrangling_pipeline(
     bigquery_client.create_dataset(dataset, exists_ok=True)
 
     try:
-        # Define table schema for claims tables
+        # Define table schema for savings tables
         schema = [
+            bigquery.SchemaField("vl_glosa_arvo", "FLOAT", mode="NULLABLE"),
+        ]
+
+        # Create excluded savings table and insert test data
+        excluded_table = bigquery.Table(
+            f"{bigquery_client.project}.{dataset_id}.{excluded_table_id}", schema=schema
+        )
+        bigquery_client.create_table(excluded_table, exists_ok=True)
+
+        # Insert test data: total vl_glosa_arvo = 500.0
+        excluded_rows = [
+            {"vl_glosa_arvo": 150.0},
+            {"vl_glosa_arvo": 200.0},
+            {"vl_glosa_arvo": 150.0},
+        ]
+        bigquery_client.insert_rows_json(
+            f"{bigquery_client.project}.{dataset_id}.{excluded_table_id}", excluded_rows
+        )
+
+        # Create savings table and insert test data
+        savings_table = bigquery.Table(
+            f"{bigquery_client.project}.{dataset_id}.{savings_table_id}", schema=schema
+        )
+        bigquery_client.create_table(savings_table, exists_ok=True)
+
+        # Insert test data: total vl_glosa_arvo = 2000.0
+        savings_rows = [
+            {"vl_glosa_arvo": 500.0},
+            {"vl_glosa_arvo": 750.0},
+            {"vl_glosa_arvo": 750.0},
+        ]
+        bigquery_client.insert_rows_json(
+            f"{bigquery_client.project}.{dataset_id}.{savings_table_id}", savings_rows
+        )
+
+        # Create dummy claims tables for pre-filtered handler
+        # (required but not queried by this test)
+        unprocessable_table_id = "unprocessable_claims"
+        processable_table_id = "processable_claims"
+        claims_schema = [
             bigquery.SchemaField("vl_pago", "FLOAT", mode="NULLABLE"),
         ]
 
-        # Create unprocessable claims table and insert test data
         unprocessable_table = bigquery.Table(
-            f"{bigquery_client.project}.{dataset_id}.{unprocessable_table_id}", schema=schema
+            f"{bigquery_client.project}.{dataset_id}.{unprocessable_table_id}", schema=claims_schema
         )
         bigquery_client.create_table(unprocessable_table, exists_ok=True)
 
-        # Insert test data: total vl_pago = 1000.0
-        unprocessable_rows = [
-            {"vl_pago": 300.0},
-            {"vl_pago": 400.0},
-            {"vl_pago": 300.0},
-        ]
-        bigquery_client.insert_rows_json(
-            f"{bigquery_client.project}.{dataset_id}.{unprocessable_table_id}", unprocessable_rows
-        )
-
-        # Create processable claims table and insert test data
         processable_table = bigquery.Table(
-            f"{bigquery_client.project}.{dataset_id}.{processable_table_id}", schema=schema
+            f"{bigquery_client.project}.{dataset_id}.{processable_table_id}", schema=claims_schema
         )
         bigquery_client.create_table(processable_table, exists_ok=True)
 
-        # Insert test data: total vl_pago = 4000.0
-        processable_rows = [
-            {"vl_pago": 1000.0},
-            {"vl_pago": 1500.0},
-            {"vl_pago": 1500.0},
-        ]
-        bigquery_client.insert_rows_json(
-            f"{bigquery_client.project}.{dataset_id}.{processable_table_id}", processable_rows
-        )
-
-        # Create CloudEvent payload for pipesv2_wrangling pipeline completion
-        # Wrangling events have payload directly in cloud_event.data (not base64 encoded)
+        # Create CloudEvent payload for pipesv2_approval pipeline completion
         event = CloudEvent(
             {
                 "type": "google.cloud.pubsub.topic.v1.messagePublished",
@@ -255,15 +248,21 @@ def test_pre_filtered_base_handler_with_wrangling_pipeline(
             {
                 "source_timestamp": "2024-01-15T10:30:00Z",
                 "payload": {
-                    "pipeline_uuid": "pipesv2_wrangling",
+                    "pipeline_uuid": "pipesv2_approval",
                     "status": "COMPLETED",
                     "variables": {
-                        "partner": "abertta",
-                        "refined_unprocessable_claims_output_table": (
+                        "partner": "cemig",
+                        "unprocessable_claims_input_table": (
                             f"{bigquery_client.project}.{dataset_id}.{unprocessable_table_id}"
                         ),
-                        "refined_processable_claims_output_table": (
+                        "processable_claims_input_table": (
                             f"{bigquery_client.project}.{dataset_id}.{processable_table_id}"
+                        ),
+                        "excluded_savings_input_table": (
+                            f"{bigquery_client.project}.{dataset_id}.{excluded_table_id}"
+                        ),
+                        "savings_input_table": (
+                            f"{bigquery_client.project}.{dataset_id}.{savings_table_id}"
                         ),
                     },
                 },
@@ -272,24 +271,24 @@ def test_pre_filtered_base_handler_with_wrangling_pipeline(
 
         # Arrange: Declare expected metric emissions
         expected_project = "projects/arvo-eng-prd"
-        expected_labels = {"partner": "abertta", "approved": "false"}
+        expected_labels = {"partner": "cemig", "approved": "true"}
 
         expected_calls = [
-            # First metric: total value (300 + 400 + 300 = 1000.0)
+            # First metric: total value (150 + 200 + 150 = 500.0)
             mocker.call(
                 name=expected_project,
                 time_series=MetricMatcher(
-                    metric_type="claims/pipeline/filtered_pre/vl_pago/total",
-                    value=1000.0,
+                    metric_type="claims/pipeline/filtered_post/vl_glosa_arvo/total",
+                    value=500.0,
                     labels=expected_labels,
                 ),
             ),
-            # Second metric: relative value (1000.0 / (1000.0 + 4000.0) = 0.2)
+            # Second metric: relative value (500.0 / 2000.0 = 0.25)
             mocker.call(
                 name=expected_project,
                 time_series=MetricMatcher(
-                    metric_type="claims/pipeline/filtered_pre/vl_pago/relative",
-                    value=0.2,
+                    metric_type="claims/pipeline/filtered_post/vl_glosa_arvo/relative",
+                    value=0.25,
                     labels=expected_labels,
                 ),
             ),
