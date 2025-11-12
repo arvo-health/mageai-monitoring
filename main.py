@@ -14,6 +14,8 @@ from handlers.post_filtered_approval import PostFilteredApprovalHandler
 from handlers.post_filtered_selection import PostFilteredSelectionHandler
 from handlers.pre_filtered_approval import PreFilteredApprovalHandler
 from handlers.pre_filtered_wrangling import PreFilteredWranglingHandler
+from handlers.processable_approval import ProcessableApprovalHandler
+from handlers.processable_wrangling import ProcessableWranglingHandler
 from metrics import create_monitoring_client
 
 logging.basicConfig(level=logging.INFO)
@@ -59,6 +61,18 @@ def create_handlers(
             data_project_id=config.bigquery_project_id,
         ),
         PostFilteredApprovalHandler(
+            monitoring_client=monitoring_client,
+            bq_client=bq_client,
+            run_project_id=config.cloud_run_project_id,
+            data_project_id=config.bigquery_project_id,
+        ),
+        ProcessableApprovalHandler(
+            monitoring_client=monitoring_client,
+            bq_client=bq_client,
+            run_project_id=config.cloud_run_project_id,
+            data_project_id=config.bigquery_project_id,
+        ),
+        ProcessableWranglingHandler(
             monitoring_client=monitoring_client,
             bq_client=bq_client,
             run_project_id=config.cloud_run_project_id,
