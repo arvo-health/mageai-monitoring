@@ -41,13 +41,13 @@ local-up: ## Start BigQuery emulator via docker-compose and seed with test data
 	@echo "Waiting for BigQuery emulator to be ready..."
 	@sleep 5
 	@echo "Seeding BigQuery with test data..."
-	@BIGQUERY_PROJECT_ID=test-project uv run python scripts/seed_bigquery.py || \
+	@BIGQUERY_PROJECT_ID=test-project uv run python scripts/seed_bigquery/main.py || \
 		(echo "Warning: Seeding failed. The emulator may still be starting. Try 'make local-seed' manually."; exit 0)
 	@echo "BigQuery emulator started and seeded on http://localhost:9050"
 
 local-seed: ## Seed BigQuery emulator with test data (requires emulator to be running)
 	@echo "Seeding BigQuery with test data..."
-	@BIGQUERY_PROJECT_ID=test-project uv run python scripts/seed_bigquery.py
+	@BIGQUERY_PROJECT_ID=test-project uv run python scripts/seed_bigquery/main.py
 
 local-down: ## Stop BigQuery emulator
 	docker-compose down
@@ -63,8 +63,8 @@ local-test: ## Test HTTP endpoint with example CloudEvent payload (requires serv
 	@echo "Testing local endpoint with example payload..."
 	@curl -X POST http://localhost:8080 \
 		-H "Content-Type: application/json" \
-		-d @test_payload.json || \
-		(echo "Error: Make sure the service is running (make local-run) and test_payload.json exists"; exit 1)
+		-d @examples/pre_filtered_payload.json || \
+		(echo "Error: Make sure the service is running (make local-run) and examples/pre_filtered_payload.json exists"; exit 1)
 
 # Docker image configuration
 IMAGE_REGISTRY := us-docker.pkg.dev/arvo-datalake/containers/mageai-monitoring

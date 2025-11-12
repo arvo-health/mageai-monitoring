@@ -1,9 +1,8 @@
 """Pytest configuration for integration tests."""
 
-from unittest.mock import MagicMock
-
 import pytest
 from google.cloud import bigquery
+from pytest_mock import MockerFixture
 from tenacity import retry, stop_after_attempt, wait_exponential
 from testcontainers.core.container import DockerContainer
 
@@ -89,7 +88,7 @@ def bigquery_client(bigquery_emulator, monkeypatch):
 
 
 @pytest.fixture(scope="function")
-def mock_monitoring_client(monkeypatch):
+def mock_monitoring_client(monkeypatch, mocker: MockerFixture):
     """
     Fixture that provides a mocked Monitoring client for integration testing.
 
@@ -108,7 +107,7 @@ def mock_monitoring_client(monkeypatch):
     import main
     import metrics
 
-    mock_client = MagicMock(spec=monitoring_v3.MetricServiceClient)
+    mock_client = mocker.MagicMock(spec=monitoring_v3.MetricServiceClient)
 
     # Set the expected project ID for tests
     monkeypatch.setenv("CLOUD_RUN_PROJECT_ID", "arvo-eng-prd")
