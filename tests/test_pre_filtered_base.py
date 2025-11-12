@@ -133,12 +133,12 @@ def test_pre_filtered_base_handler_with_approval_pipeline(
                     labels=expected_labels,
                 ),
             ),
-            # Second metric: relative value (1000.0 / 4000.0 = 0.25)
+            # Second metric: relative value (1000.0 / (1000.0 + 4000.0) = 0.2)
             call(
                 name=expected_project,
                 time_series=MetricMatcher(
                     metric_type="claims/pipeline/filtered_pre/vl_pago/relative",
-                    value=0.25,
+                    value=0.2,
                     labels=expected_labels,
                 ),
             ),
@@ -282,12 +282,12 @@ def test_pre_filtered_base_handler_with_wrangling_pipeline(
                     labels=expected_labels,
                 ),
             ),
-            # Second metric: relative value (1000.0 / 4000.0 = 0.25)
+            # Second metric: relative value (1000.0 / (1000.0 + 4000.0) = 0.2)
             call(
                 name=expected_project,
                 time_series=MetricMatcher(
                     metric_type="claims/pipeline/filtered_pre/vl_pago/relative",
-                    value=0.25,
+                    value=0.2,
                     labels=expected_labels,
                 ),
             ),

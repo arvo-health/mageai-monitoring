@@ -57,7 +57,7 @@ class PreFilteredBaseHandler(Handler):
         Queries BigQuery to aggregate the total value of claims filtered during
         the pre-processing stage, then emits metrics representing both the total
         and relative values. The relative metric is calculated as the ratio of
-        filtered claims value to the total value of processable claims.
+        filtered claims value to the total value of all claims (unprocessable + processable).
 
         Args:
             decoded_message: The decoded message dictionary containing pipeline completion data
@@ -113,8 +113,8 @@ class PreFilteredBaseHandler(Handler):
             u.total_vl_pago,
             p.sum_processable_vl_pago,
             CASE
-                WHEN p.sum_processable_vl_pago > 0
-                THEN u.total_vl_pago / p.sum_processable_vl_pago
+                WHEN (u.total_vl_pago + p.sum_processable_vl_pago) > 0
+                THEN u.total_vl_pago / (u.total_vl_pago + p.sum_processable_vl_pago)
                 ELSE 0
             END AS relative_vl_pago
         FROM unprocessable_sum u, processable_sum p
