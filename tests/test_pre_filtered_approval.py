@@ -1,12 +1,46 @@
 """Unit tests for PreFilteredApprovalHandler."""
 
+import pytest
 from pytest_mock import MockerFixture
 
 from handlers.pre_filtered_approval import PreFilteredApprovalHandler
 
 
-def test_match_with_approval_completed(mocker: MockerFixture):
-    """Test that match returns True for pipesv2_approval completion events."""
+@pytest.mark.parametrize(
+    "decoded_message,expected",
+    [
+        (
+            {
+                "payload": {
+                    "pipeline_uuid": "pipesv2_approval",
+                    "status": "COMPLETED",
+                }
+            },
+            True,
+        ),
+        (
+            {
+                "payload": {
+                    "pipeline_uuid": "pipesv2_wrangling",
+                    "status": "COMPLETED",
+                }
+            },
+            False,
+        ),
+        (
+            {
+                "payload": {
+                    "pipeline_uuid": "pipesv2_approval",
+                    "status": "RUNNING",
+                }
+            },
+            False,
+        ),
+        ({}, False),
+    ],
+)
+def test_match(mocker: MockerFixture, decoded_message, expected):
+    """Test that match returns the expected result for various message configurations."""
     handler = PreFilteredApprovalHandler(
         monitoring_client=mocker.MagicMock(),
         bq_client=mocker.MagicMock(),
@@ -14,66 +48,7 @@ def test_match_with_approval_completed(mocker: MockerFixture):
         data_project_id="test-data-project",
     )
 
-    decoded_message = {
-        "payload": {
-            "pipeline_uuid": "pipesv2_approval",
-            "status": "COMPLETED",
-        }
-    }
-
-    assert handler.match(decoded_message) is True
-
-
-def test_match_with_wrong_pipeline(mocker: MockerFixture):
-    """Test that match returns False for non-approval pipelines."""
-    handler = PreFilteredApprovalHandler(
-        monitoring_client=mocker.MagicMock(),
-        bq_client=mocker.MagicMock(),
-        run_project_id="test-project",
-        data_project_id="test-data-project",
-    )
-
-    decoded_message = {
-        "payload": {
-            "pipeline_uuid": "pipesv2_wrangling",
-            "status": "COMPLETED",
-        }
-    }
-
-    assert handler.match(decoded_message) is False
-
-
-def test_match_with_wrong_status(mocker: MockerFixture):
-    """Test that match returns False for non-completed statuses."""
-    handler = PreFilteredApprovalHandler(
-        monitoring_client=mocker.MagicMock(),
-        bq_client=mocker.MagicMock(),
-        run_project_id="test-project",
-        data_project_id="test-data-project",
-    )
-
-    decoded_message = {
-        "payload": {
-            "pipeline_uuid": "pipesv2_approval",
-            "status": "RUNNING",
-        }
-    }
-
-    assert handler.match(decoded_message) is False
-
-
-def test_match_with_missing_payload(mocker: MockerFixture):
-    """Test that match returns False when payload is missing."""
-    handler = PreFilteredApprovalHandler(
-        monitoring_client=mocker.MagicMock(),
-        bq_client=mocker.MagicMock(),
-        run_project_id="test-project",
-        data_project_id="test-data-project",
-    )
-
-    decoded_message = {}
-
-    assert handler.match(decoded_message) is False
+    assert handler.match(decoded_message) is expected
 
 
 def test_handle_delegates_to_base(mocker: MockerFixture):

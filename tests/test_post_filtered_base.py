@@ -8,6 +8,166 @@ from pytest_mock import MockerFixture
 import main
 from tests.metrics import MetricMatcher
 
+# Test data constants
+EXCLUDED_SAVINGS_ROWS = [
+    {"vl_glosa_arvo": 150.0},
+    {"vl_glosa_arvo": 200.0},
+    {"vl_glosa_arvo": 150.0},
+]
+EXCLUDED_SAVINGS_TOTAL = 500.0
+
+SAVINGS_ROWS = [
+    {"vl_glosa_arvo": 500.0},
+    {"vl_glosa_arvo": 750.0},
+    {"vl_glosa_arvo": 750.0},
+]
+SAVINGS_TOTAL = 2000.0
+
+RELATIVE_VALUE = EXCLUDED_SAVINGS_TOTAL / SAVINGS_TOTAL  # 0.25
+
+
+def _create_dataset(bigquery_client, dataset_id: str) -> None:
+    """Create a BigQuery dataset for testing."""
+    dataset = bigquery.Dataset(f"{bigquery_client.project}.{dataset_id}")
+    dataset.location = "US"
+    bigquery_client.create_dataset(dataset, exists_ok=True)
+
+
+def _create_savings_table_with_data(
+    bigquery_client, dataset_id: str, table_id: str, rows: list[dict]
+) -> None:
+    """Create a savings table and insert test data."""
+    schema = [
+        bigquery.SchemaField("vl_glosa_arvo", "FLOAT", mode="NULLABLE"),
+    ]
+    table = bigquery.Table(f"{bigquery_client.project}.{dataset_id}.{table_id}", schema=schema)
+    bigquery_client.create_table(table, exists_ok=True)
+    bigquery_client.insert_rows_json(f"{bigquery_client.project}.{dataset_id}.{table_id}", rows)
+
+
+def _create_claims_tables(bigquery_client, dataset_id: str) -> tuple[str, str]:
+    """Create dummy claims tables for pre-filtered handler (required but not queried)."""
+    unprocessable_table_id = "unprocessable_claims"
+    processable_table_id = "processable_claims"
+    claims_schema = [
+        bigquery.SchemaField("vl_pago", "FLOAT", mode="NULLABLE"),
+    ]
+
+    for table_id in [unprocessable_table_id, processable_table_id]:
+        table = bigquery.Table(
+            f"{bigquery_client.project}.{dataset_id}.{table_id}", schema=claims_schema
+        )
+        bigquery_client.create_table(table, exists_ok=True)
+
+    return unprocessable_table_id, processable_table_id
+
+
+def _create_cloud_event(
+    bigquery_client,
+    dataset_id: str,
+    pipeline_uuid: str,
+    partner: str,
+    excluded_table_id: str,
+    savings_table_id: str,
+    excluded_table_var: str,
+    savings_table_var: str,
+    include_claims_tables: bool = False,
+) -> CloudEvent:
+    """Create a CloudEvent for pipeline completion."""
+    variables = {
+        "partner": partner,
+        excluded_table_var: f"{bigquery_client.project}.{dataset_id}.{excluded_table_id}",
+        savings_table_var: f"{bigquery_client.project}.{dataset_id}.{savings_table_id}",
+    }
+
+    if include_claims_tables:
+        unprocessable_table_id, processable_table_id = _create_claims_tables(
+            bigquery_client, dataset_id
+        )
+        variables.update(
+            {
+                "unprocessable_claims_input_table": (
+                    f"{bigquery_client.project}.{dataset_id}.{unprocessable_table_id}"
+                ),
+                "processable_claims_input_table": (
+                    f"{bigquery_client.project}.{dataset_id}.{processable_table_id}"
+                ),
+            }
+        )
+
+    return CloudEvent(
+        {
+            "type": "google.cloud.pubsub.topic.v1.messagePublished",
+            "source": "//pubsub.googleapis.com/projects/test-project/topics/test-topic",
+            "specversion": "1.0",
+            "id": "test-event-id",
+        },
+        {
+            "source_timestamp": "2024-01-15T10:30:00Z",
+            "payload": {
+                "pipeline_uuid": pipeline_uuid,
+                "status": "COMPLETED",
+                "variables": variables,
+            },
+        },
+    )
+
+
+def _create_expected_metric_calls(
+    mocker: MockerFixture, partner: str, approved: str, total_value: float, relative_value: float
+) -> list:
+    """Create expected metric call matchers."""
+    expected_project = "projects/arvo-eng-prd"
+    expected_labels = {"partner": partner, "approved": approved}
+
+    return [
+        mocker.call(
+            name=expected_project,
+            time_series=MetricMatcher(
+                metric_type="claims/pipeline/filtered_post/vl_glosa_arvo/total",
+                value=total_value,
+                labels=expected_labels,
+            ),
+        ),
+        mocker.call(
+            name=expected_project,
+            time_series=MetricMatcher(
+                metric_type="claims/pipeline/filtered_post/vl_glosa_arvo/relative",
+                value=relative_value,
+                labels=expected_labels,
+            ),
+        ),
+    ]
+
+
+def _assert_response_success(response) -> None:
+    """Assert that the handler response indicates success."""
+    assert response is not None
+    status_code = response[1] if isinstance(response, tuple) else response.status_code
+    assert status_code == 204
+
+
+def _assert_metrics_emitted(mock_monitoring_client, expected_calls: list) -> None:
+    """Assert that expected metric calls were made."""
+    actual_calls = mock_monitoring_client.create_time_series.call_args_list
+
+    for expected_call in expected_calls:
+        expected_name = expected_call.kwargs["name"]
+        expected_time_series_matcher = expected_call.kwargs["time_series"]
+
+        found = False
+        for actual_call in actual_calls:
+            if actual_call.kwargs.get("name") == expected_name:
+                actual_time_series = actual_call.kwargs.get("time_series", [])
+                if expected_time_series_matcher == actual_time_series:
+                    found = True
+                    break
+
+        assert found, (
+            f"Expected call not found: name={expected_name}, "
+            f"time_series={expected_time_series_matcher}"
+        )
+
 
 @pytest.mark.integration
 def test_post_filtered_base_handler_with_selection_pipeline(
@@ -27,134 +187,39 @@ def test_post_filtered_base_handler_with_selection_pipeline(
     excluded_table_id = "excluded_savings"
     savings_table_id = "savings"
 
-    # Create dataset
-    dataset = bigquery.Dataset(f"{bigquery_client.project}.{dataset_id}")
-    dataset.location = "US"
-    bigquery_client.create_dataset(dataset, exists_ok=True)
+    _create_dataset(bigquery_client, dataset_id)
 
     try:
-        # Define table schema for savings tables
-        schema = [
-            bigquery.SchemaField("vl_glosa_arvo", "FLOAT", mode="NULLABLE"),
-        ]
-
-        # Create excluded savings table and insert test data
-        excluded_table = bigquery.Table(
-            f"{bigquery_client.project}.{dataset_id}.{excluded_table_id}", schema=schema
+        _create_savings_table_with_data(
+            bigquery_client, dataset_id, excluded_table_id, EXCLUDED_SAVINGS_ROWS
         )
-        bigquery_client.create_table(excluded_table, exists_ok=True)
+        _create_savings_table_with_data(bigquery_client, dataset_id, savings_table_id, SAVINGS_ROWS)
 
-        # Insert test data: total vl_glosa_arvo = 500.0
-        excluded_rows = [
-            {"vl_glosa_arvo": 150.0},
-            {"vl_glosa_arvo": 200.0},
-            {"vl_glosa_arvo": 150.0},
-        ]
-        bigquery_client.insert_rows_json(
-            f"{bigquery_client.project}.{dataset_id}.{excluded_table_id}", excluded_rows
+        event = _create_cloud_event(
+            bigquery_client=bigquery_client,
+            dataset_id=dataset_id,
+            pipeline_uuid="pipesv2_selection",
+            partner="athena",
+            excluded_table_id=excluded_table_id,
+            savings_table_id=savings_table_id,
+            excluded_table_var="excluded_savings_output_table",
+            savings_table_var="savings_input_table",
         )
 
-        # Create savings table and insert test data
-        savings_table = bigquery.Table(
-            f"{bigquery_client.project}.{dataset_id}.{savings_table_id}", schema=schema
-        )
-        bigquery_client.create_table(savings_table, exists_ok=True)
-
-        # Insert test data: total vl_glosa_arvo = 2000.0
-        savings_rows = [
-            {"vl_glosa_arvo": 500.0},
-            {"vl_glosa_arvo": 750.0},
-            {"vl_glosa_arvo": 750.0},
-        ]
-        bigquery_client.insert_rows_json(
-            f"{bigquery_client.project}.{dataset_id}.{savings_table_id}", savings_rows
+        expected_calls = _create_expected_metric_calls(
+            mocker,
+            partner="athena",
+            approved="false",
+            total_value=EXCLUDED_SAVINGS_TOTAL,
+            relative_value=RELATIVE_VALUE,
         )
 
-        # Create CloudEvent payload for pipesv2_selection pipeline completion
-        event = CloudEvent(
-            {
-                "type": "google.cloud.pubsub.topic.v1.messagePublished",
-                "source": "//pubsub.googleapis.com/projects/test-project/topics/test-topic",
-                "specversion": "1.0",
-                "id": "test-event-id",
-            },
-            {
-                "source_timestamp": "2024-01-15T10:30:00Z",
-                "payload": {
-                    "pipeline_uuid": "pipesv2_selection",
-                    "status": "COMPLETED",
-                    "variables": {
-                        "partner": "athena",
-                        "excluded_savings_output_table": (
-                            f"{bigquery_client.project}.{dataset_id}.{excluded_table_id}"
-                        ),
-                        "savings_input_table": (
-                            f"{bigquery_client.project}.{dataset_id}.{savings_table_id}"
-                        ),
-                    },
-                },
-            },
-        )
-
-        # Arrange: Declare expected metric emissions
-        expected_project = "projects/arvo-eng-prd"
-        expected_labels = {"partner": "athena", "approved": "false"}
-
-        expected_calls = [
-            # First metric: total value (150 + 200 + 150 = 500.0)
-            mocker.call(
-                name=expected_project,
-                time_series=MetricMatcher(
-                    metric_type="claims/pipeline/filtered_post/vl_glosa_arvo/total",
-                    value=500.0,
-                    labels=expected_labels,
-                ),
-            ),
-            # Second metric: relative value (500.0 / 2000.0 = 0.25)
-            mocker.call(
-                name=expected_project,
-                time_series=MetricMatcher(
-                    metric_type="claims/pipeline/filtered_post/vl_glosa_arvo/relative",
-                    value=0.25,
-                    labels=expected_labels,
-                ),
-            ),
-        ]
-
-        # Act
         response = main.handle_cloud_event(event)
 
-        # Assert: Handler succeeded
-        assert response is not None
-        status_code = response[1] if isinstance(response, tuple) else response.status_code
-        assert status_code == 204
-
-        # Assert: Expected metric calls were made
-        # Check that our expected calls are in the call list
-        # (may have extra calls from PipelineRunHandler)
-        actual_calls = mock_monitoring_client.create_time_series.call_args_list
-
-        # Verify each expected call exists in the actual calls
-        for expected_call in expected_calls:
-            expected_name = expected_call.kwargs["name"]
-            expected_time_series_matcher = expected_call.kwargs["time_series"]
-
-            # Find matching call
-            found = False
-            for actual_call in actual_calls:
-                if actual_call.kwargs.get("name") == expected_name:
-                    actual_time_series = actual_call.kwargs.get("time_series", [])
-                    if expected_time_series_matcher == actual_time_series:
-                        found = True
-                        break
-
-            assert found, (
-                f"Expected call not found: name={expected_name}, "
-                f"time_series={expected_time_series_matcher}"
-            )
+        _assert_response_success(response)
+        _assert_metrics_emitted(mock_monitoring_client, expected_calls)
 
     finally:
-        # Clean up
         bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
 
 
@@ -176,156 +241,38 @@ def test_post_filtered_base_handler_with_approval_pipeline(
     excluded_table_id = "excluded_savings"
     savings_table_id = "savings"
 
-    # Create dataset
-    dataset = bigquery.Dataset(f"{bigquery_client.project}.{dataset_id}")
-    dataset.location = "US"
-    bigquery_client.create_dataset(dataset, exists_ok=True)
+    _create_dataset(bigquery_client, dataset_id)
 
     try:
-        # Define table schema for savings tables
-        schema = [
-            bigquery.SchemaField("vl_glosa_arvo", "FLOAT", mode="NULLABLE"),
-        ]
-
-        # Create excluded savings table and insert test data
-        excluded_table = bigquery.Table(
-            f"{bigquery_client.project}.{dataset_id}.{excluded_table_id}", schema=schema
+        _create_savings_table_with_data(
+            bigquery_client, dataset_id, excluded_table_id, EXCLUDED_SAVINGS_ROWS
         )
-        bigquery_client.create_table(excluded_table, exists_ok=True)
+        _create_savings_table_with_data(bigquery_client, dataset_id, savings_table_id, SAVINGS_ROWS)
 
-        # Insert test data: total vl_glosa_arvo = 500.0
-        excluded_rows = [
-            {"vl_glosa_arvo": 150.0},
-            {"vl_glosa_arvo": 200.0},
-            {"vl_glosa_arvo": 150.0},
-        ]
-        bigquery_client.insert_rows_json(
-            f"{bigquery_client.project}.{dataset_id}.{excluded_table_id}", excluded_rows
+        event = _create_cloud_event(
+            bigquery_client=bigquery_client,
+            dataset_id=dataset_id,
+            pipeline_uuid="pipesv2_approval",
+            partner="cemig",
+            excluded_table_id=excluded_table_id,
+            savings_table_id=savings_table_id,
+            excluded_table_var="excluded_savings_input_table",
+            savings_table_var="savings_input_table",
+            include_claims_tables=True,
         )
 
-        # Create savings table and insert test data
-        savings_table = bigquery.Table(
-            f"{bigquery_client.project}.{dataset_id}.{savings_table_id}", schema=schema
-        )
-        bigquery_client.create_table(savings_table, exists_ok=True)
-
-        # Insert test data: total vl_glosa_arvo = 2000.0
-        savings_rows = [
-            {"vl_glosa_arvo": 500.0},
-            {"vl_glosa_arvo": 750.0},
-            {"vl_glosa_arvo": 750.0},
-        ]
-        bigquery_client.insert_rows_json(
-            f"{bigquery_client.project}.{dataset_id}.{savings_table_id}", savings_rows
+        expected_calls = _create_expected_metric_calls(
+            mocker,
+            partner="cemig",
+            approved="true",
+            total_value=EXCLUDED_SAVINGS_TOTAL,
+            relative_value=RELATIVE_VALUE,
         )
 
-        # Create dummy claims tables for pre-filtered handler
-        # (required but not queried by this test)
-        unprocessable_table_id = "unprocessable_claims"
-        processable_table_id = "processable_claims"
-        claims_schema = [
-            bigquery.SchemaField("vl_pago", "FLOAT", mode="NULLABLE"),
-        ]
-
-        unprocessable_table = bigquery.Table(
-            f"{bigquery_client.project}.{dataset_id}.{unprocessable_table_id}", schema=claims_schema
-        )
-        bigquery_client.create_table(unprocessable_table, exists_ok=True)
-
-        processable_table = bigquery.Table(
-            f"{bigquery_client.project}.{dataset_id}.{processable_table_id}", schema=claims_schema
-        )
-        bigquery_client.create_table(processable_table, exists_ok=True)
-
-        # Create CloudEvent payload for pipesv2_approval pipeline completion
-        event = CloudEvent(
-            {
-                "type": "google.cloud.pubsub.topic.v1.messagePublished",
-                "source": "//pubsub.googleapis.com/projects/test-project/topics/test-topic",
-                "specversion": "1.0",
-                "id": "test-event-id",
-            },
-            {
-                "source_timestamp": "2024-01-15T10:30:00Z",
-                "payload": {
-                    "pipeline_uuid": "pipesv2_approval",
-                    "status": "COMPLETED",
-                    "variables": {
-                        "partner": "cemig",
-                        "unprocessable_claims_input_table": (
-                            f"{bigquery_client.project}.{dataset_id}.{unprocessable_table_id}"
-                        ),
-                        "processable_claims_input_table": (
-                            f"{bigquery_client.project}.{dataset_id}.{processable_table_id}"
-                        ),
-                        "excluded_savings_input_table": (
-                            f"{bigquery_client.project}.{dataset_id}.{excluded_table_id}"
-                        ),
-                        "savings_input_table": (
-                            f"{bigquery_client.project}.{dataset_id}.{savings_table_id}"
-                        ),
-                    },
-                },
-            },
-        )
-
-        # Arrange: Declare expected metric emissions
-        expected_project = "projects/arvo-eng-prd"
-        expected_labels = {"partner": "cemig", "approved": "true"}
-
-        expected_calls = [
-            # First metric: total value (150 + 200 + 150 = 500.0)
-            mocker.call(
-                name=expected_project,
-                time_series=MetricMatcher(
-                    metric_type="claims/pipeline/filtered_post/vl_glosa_arvo/total",
-                    value=500.0,
-                    labels=expected_labels,
-                ),
-            ),
-            # Second metric: relative value (500.0 / 2000.0 = 0.25)
-            mocker.call(
-                name=expected_project,
-                time_series=MetricMatcher(
-                    metric_type="claims/pipeline/filtered_post/vl_glosa_arvo/relative",
-                    value=0.25,
-                    labels=expected_labels,
-                ),
-            ),
-        ]
-
-        # Act
         response = main.handle_cloud_event(event)
 
-        # Assert: Handler succeeded
-        assert response is not None
-        status_code = response[1] if isinstance(response, tuple) else response.status_code
-        assert status_code == 204
-
-        # Assert: Expected metric calls were made
-        # Check that our expected calls are in the call list
-        # (may have extra calls from PipelineRunHandler)
-        actual_calls = mock_monitoring_client.create_time_series.call_args_list
-
-        # Verify each expected call exists in the actual calls
-        for expected_call in expected_calls:
-            expected_name = expected_call.kwargs["name"]
-            expected_time_series_matcher = expected_call.kwargs["time_series"]
-
-            # Find matching call
-            found = False
-            for actual_call in actual_calls:
-                if actual_call.kwargs.get("name") == expected_name:
-                    actual_time_series = actual_call.kwargs.get("time_series", [])
-                    if expected_time_series_matcher == actual_time_series:
-                        found = True
-                        break
-
-            assert found, (
-                f"Expected call not found: name={expected_name}, "
-                f"time_series={expected_time_series_matcher}"
-            )
+        _assert_response_success(response)
+        _assert_metrics_emitted(mock_monitoring_client, expected_calls)
 
     finally:
-        # Clean up
         bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
