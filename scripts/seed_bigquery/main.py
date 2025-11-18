@@ -18,7 +18,7 @@ from google.cloud import bigquery
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from scripts.seed_bigquery import post_filtered, pre_filtered  # noqa: E402
+from scripts.seed_bigquery import post_filtered, pre_filtered, processable  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -72,9 +72,10 @@ def main():
         sys.exit(1)
 
     try:
-        # Seed both pre-filtered and post-filtered data
+        # Seed pre-filtered, post-filtered, and processable data
         pre_filtered.seed_pre_filtered_data(client, project_id)
         post_filtered.seed_post_filtered_data(client, project_id)
+        processable.seed_processable_data(client, project_id)
         logger.info("Seeding completed successfully")
     except Exception as e:
         logger.error(f"Seeding failed: {e}")
