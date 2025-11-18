@@ -1,0 +1,100 @@
+{
+  "type": "google.cloud.pubsub.topic.v1.messagePublished",
+  "source": "//pubsub.googleapis.com/projects/local-project/topics/local-topic",
+  "specversion": "1.0",
+  "id": "local-test-event-selection",
+  "data": {
+    "uuid": "7a14e513-0132-422a-8dd8-472500000001",
+    "read_timestamp": "2025-11-11T17:40:54.790000Z",
+    "source_timestamp": "2025-11-11T17:40:50.201000Z",
+    "object": "public_pipeline_run",
+    "read_method": "postgresql-cdc",
+    "stream_name": "projects/575686610682/locations/us-east1/streams/mageai-cdc-stream",
+    "schema_key": "69db90b9a8c1a263696eb5cbdf57404bd2a9b7f4",
+    "sort_keys": [1762882850201, "D8/90009890"],
+    "source_metadata": {
+      "schema": "public",
+      "table": "pipeline_run",
+      "is_deleted": false,
+      "change_type": "UPDATE",
+      "tx_id": 1407566,
+      "lsn": "D8/90009890",
+      "primary_keys": ["id"]
+    },
+    "payload": {
+      "id": 18280,
+      "created_at": "2025-11-11T17:29:19.806365Z",
+      "updated_at": "2025-11-11T17:40:49.333215Z",
+      "pipeline_schedule_id": 242,
+      "pipeline_uuid": "pipesv2_selection",
+      "execution_date": "2025-11-11T17:29:20.080361Z",
+      "status": "COMPLETED",
+      "completed_at": "2025-11-11T17:40:50.199661Z",
+      "variables": {
+        "selected_savings_output_table": "tmp_athena.selected_savings_athena_20251111_163000",
+        "manual_validation_output_table": "tmp_athena.manual_validation_claims_athena_20251111_163000",
+        "internal_validation_output_table": "tmp_athena.internal_validation_claims_athena_20251111_163000",
+        "manual_validation_filters": null,
+        "internal_validation_filters": null,
+        "excluded_savings_output_table": "tmp_athena.excluded_savings_athena_20251111_163000",
+        "claims_input_table": "tmp_athena.enriched_claims_athena_20251111_163000",
+        "savings_input_table": "tmp_athena.savings_athena_20251111_163000",
+        "post_processing_filters": [
+          {
+            "version": "486c2228d70863e6c9dceeb4ee3e37e9037b14ab",
+            "function_path": "workflows_v2.filters.general.filter_agent_provider",
+            "description": "Post-filter for Athena - agent provider combinations",
+            "reason": "NOT_APPLICABLE_PROVIDER",
+            "kwargs": {
+              "agent_providers": {
+                "C019": ["188606710"],
+                "C048": ["14549649", "14082108"]
+              }
+            }
+          },
+          {
+            "version": "486c2228d70863e6c9dceeb4ee3e37e9037b14ab",
+            "function_path": "workflows_v2.filters.athena.filter_athena_superposition_codes",
+            "description": "Post-filter for Athena - superposition codes",
+            "reason": "NOT_APPLICABLE_PROVIDER",
+            "kwargs": {}
+          },
+          {
+            "version": "486c2228d70863e6c9dceeb4ee3e37e9037b14ab",
+            "function_path": "workflows_v2.filters.general.filter_tea",
+            "description": "Post-filter for Athena - TEA exclusions",
+            "reason": "FIX_DATA",
+            "kwargs": {}
+          },
+          {
+            "version": "486c2228d70863e6c9dceeb4ee3e37e9037b14ab",
+            "function_path": "workflows_v2.filters.general.filter_provider_plus_column",
+            "description": "Post-filter for Athena - provider with specific contract",
+            "reason": "TECHNICAL_DISAGREEMENT",
+            "kwargs": {
+              "column_to_filter": "seguradora",
+              "provider_column_values": {
+                "188286770": ["UNIHOSP", "HUMANA MA", "HUMANA PI", "MEDPLAN", "HUMANA RN"]
+              }
+            }
+          }
+        ],
+        "submit_agents": ["C012", "R001", "C021", "C014", "C015", "C002", "C034", "C041", "C017", "C036", "C026", "C049", "C051", "C052", "C050", "C053", "C037", "C038", "C030", "C048", "C023", "C018", "C016", "C019", "C029", "C045", "C046", "C004", "C005", "C006"],
+        "gcs_lock_file": {
+          "bucket_name": "pipes_v2",
+          "path": "claim_savings_selection/athena.lock",
+          "disabled": false
+        },
+        "execution_partition": "242/20251111T172920_080361",
+        "partner": "athena"
+      },
+      "passed_sla": false,
+      "event_variables": null,
+      "metrics": null,
+      "backfill_id": null,
+      "executor_type": "LOCAL_PYTHON",
+      "started_at": "2025-11-11T17:29:20.650702Z"
+    }
+  }
+}
+

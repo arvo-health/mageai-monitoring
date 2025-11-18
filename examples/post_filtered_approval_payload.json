@@ -1,0 +1,77 @@
+{
+  "type": "google.cloud.pubsub.topic.v1.messagePublished",
+  "source": "//pubsub.googleapis.com/projects/local-project/topics/local-topic",
+  "specversion": "1.0",
+  "id": "local-test-event-approval",
+  "data": {
+    "uuid": "7f9b0cb0-90dc-4453-a461-c73600000000",
+    "read_timestamp": "2025-11-11T16:40:52.431000Z",
+    "source_timestamp": "2025-11-11T16:40:28.285000Z",
+    "object": "public_pipeline_run",
+    "read_method": "postgresql-cdc",
+    "stream_name": "projects/575686610682/locations/us-east1/streams/mageai-cdc-stream",
+    "schema_key": "69db90b9a8c1a263696eb5cbdf57404bd2a9b7f4",
+    "sort_keys": [1762879228285, "D8/60011530"],
+    "source_metadata": {
+      "schema": "public",
+      "table": "pipeline_run",
+      "is_deleted": false,
+      "change_type": "UPDATE",
+      "tx_id": 1406125,
+      "lsn": "D8/60011530",
+      "primary_keys": ["id"]
+    },
+    "payload": {
+      "id": 18264,
+      "created_at": "2025-11-11T16:34:22.058939Z",
+      "updated_at": "2025-11-11T16:40:27.346715Z",
+      "pipeline_schedule_id": 34,
+      "pipeline_uuid": "pipesv2_approval",
+      "execution_date": "2025-11-11T16:34:22.370685Z",
+      "status": "COMPLETED",
+      "completed_at": "2025-11-11T16:40:28.282138Z",
+      "variables": {
+        "raw_claims_output_table": "raw_cemig.raw_claims",
+        "processable_claims_input_table": "tmp_cemig.processable_claims_cemig_20251111_100000",
+        "unprocessable_claims_input_table": "tmp_cemig.unprocessable_claims_cemig_20251111_100000",
+        "manual_validation_output_table": "trusted_cemig.manual_validation_claims",
+        "manual_validation_suffix": "_manual",
+        "internal_validation_output_table": "trusted_cemig.internal_validation_claims",
+        "internal_validation_suffix": "_internal",
+        "claim_host": "https://claim-mgmt.arvohealth.com",
+        "manual_validation_input_table": "tmp_cemig.manual_validation_claims_cemig_20251111_100000",
+        "responsibles": ["maura.godinho@arvo.com.br", "gabrielle.redua@arvo.com.br", "zeliana@arvo.com.br", "juliana@arvo.com.br", "cinthia.lugao@arvo.com.br"],
+        "percentages": [0.2, 0.2, 0.2, 0.2, 0.2],
+        "partner": "cemig",
+        "is_active_claims": true,
+        "run_id": "cemig_20251111_100000",
+        "internal_validation_input_table": "tmp_cemig.internal_validation_claims_cemig_20251111_100000",
+        "unprocessable_claims_output_table": "refined_cemig.unprocessable_claims",
+        "processable_claims_output_table": "refined_cemig.processable_claims",
+        "selected_savings_input_table": "tmp_cemig.selected_savings_cemig_20251111_100000",
+        "selected_savings_output_table": "trusted_cemig.selected_savings",
+        "savings_input_table": "tmp_cemig.savings_cemig_20251111_100000",
+        "savings_output_table": "refined_cemig.savings",
+        "excluded_savings_input_table": "tmp_cemig.excluded_savings_cemig_20251111_100000",
+        "excluded_savings_output_table": "trusted_cemig.excluded_savings",
+        "delta_enriched_claims_input_table": "tmp_cemig.delta_enriched_claims_cemig_20251111_100000",
+        "delta_enriched_claims_output_table": "refined_cemig.delta_enriched_claims",
+        "enriched_claims_input_table": "tmp_cemig.enriched_claims_cemig_20251111_100000",
+        "enriched_claims_output_table": "refined_cemig.enriched_claims",
+        "gcs_lock_file": {
+          "bucket_name": "pipes_v2",
+          "path": "approval/cemig.lock",
+          "disabled": false
+        },
+        "execution_partition": "34/20251111T163422_370685"
+      },
+      "passed_sla": false,
+      "event_variables": null,
+      "metrics": null,
+      "backfill_id": null,
+      "executor_type": "LOCAL_PYTHON",
+      "started_at": "2025-11-11T16:34:27.432766Z"
+    }
+  }
+}
+

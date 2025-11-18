@@ -95,11 +95,21 @@ The service can be run locally for development and testing. In local mode, the s
    ```bash
    make local-up
    ```
-   This starts a BigQuery emulator container on `localhost:9050` and automatically seeds it with test datasets and tables that match the example payload. The seeding creates:
-   - Dataset: `tmp_abertta` in the `test-project` project
-   - Tables with sample claim data:
-     - `unprocessable_claims_abertta_20251105_171427` (total `vl_pago`: 1500.0)
-     - `processable_claims_abertta_20251105_171427` (total `vl_pago`: 8000.0)
+   This starts a BigQuery emulator container on `localhost:9050` and automatically seeds it with test datasets and tables that match the example payloads. The seeding creates:
+   - Pre-filtered data (for wrangling/approval pipelines):
+     - Dataset: `tmp_abertta` in the `test-project` project
+     - Tables with sample claim data:
+       - `unprocessable_claims_abertta_20251105_171427` (total `vl_pago`: 1500.0)
+       - `processable_claims_abertta_20251105_171427` (total `vl_pago`: 8000.0)
+   - Post-filtered data (for selection/approval pipelines):
+     - Dataset: `tmp_athena` in the `test-project` project
+     - Tables with sample savings data:
+       - `excluded_savings_athena_20251111_163000` (total `vl_glosa_arvo`: 500.0)
+       - `savings_athena_20251111_163000` (total `vl_glosa_arvo`: 2000.0)
+     - Dataset: `tmp_cemig` in the `test-project` project
+     - Tables with sample savings data:
+       - `excluded_savings_cemig_20251111_100000` (total `vl_glosa_arvo`: 500.0)
+       - `savings_cemig_20251111_100000` (total `vl_glosa_arvo`: 2000.0)
 
 2. **Run the service in local mode:**
    ```bash
@@ -150,7 +160,7 @@ LOCAL_MODE=true RUN_PROJECT_ID=my-project uv run functions-framework --target=ha
 
 The service accepts HTTP POST requests with CloudEvent JSON payloads. The same handler works for both local development and production deployment.
 
-**Example CloudEvent payload** (save as `test_payload.json`):
+**Example CloudEvent payloads** (located in `examples/` directory):
 
 ```json
 {
@@ -241,12 +251,23 @@ The service accepts HTTP POST requests with CloudEvent JSON payloads. The same h
 ```bash
 curl -X POST http://localhost:8080 \
   -H "Content-Type: application/json" \
-  -d @test_payload.json
+  -d @examples/pre_filtered_payload.json
 ```
 
 Or use the Makefile command:
 ```bash
 make local-test
+```
+
+You can also test with post-filtered payloads:
+```bash
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d @examples/post_filtered_selection_payload.json
+
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d @examples/post_filtered_approval_payload.json
 ```
 
 **Expected Response:**
@@ -258,8 +279,12 @@ make local-test
   ```
 
 The metrics are calculated by querying the seeded BigQuery tables:
-- **Total value**: Sum of `vl_pago` from unprocessable claims table (1500.0)
-- **Relative value**: Ratio of unprocessable to processable claims (1500.0 / 8000.0 = 0.1875)
+- **Pre-filtered metrics** (from `examples/pre_filtered_payload.json`):
+  - **Total value**: Sum of `vl_pago` from unprocessable claims table (1500.0)
+  - **Relative value**: Ratio of unprocessable to processable claims (1500.0 / 8000.0 = 0.1875)
+- **Post-filtered metrics** (from `examples/post_filtered_*_payload.json`):
+  - **Total value**: Sum of `vl_glosa_arvo` from excluded savings table (500.0)
+  - **Relative value**: Ratio of excluded to total savings (500.0 / 2000.0 = 0.25)
 
 ### What's Different in Local Mode
 

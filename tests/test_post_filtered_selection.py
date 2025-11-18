@@ -1,9 +1,9 @@
-"""Unit tests for PreFilteredApprovalHandler."""
+"""Unit tests for PostFilteredSelectionHandler."""
 
 import pytest
 from pytest_mock import MockerFixture
 
-from handlers.pre_filtered_approval import PreFilteredApprovalHandler
+from handlers.post_filtered_selection import PostFilteredSelectionHandler
 
 
 @pytest.mark.parametrize(
@@ -12,7 +12,7 @@ from handlers.pre_filtered_approval import PreFilteredApprovalHandler
         (
             {
                 "payload": {
-                    "pipeline_uuid": "pipesv2_approval",
+                    "pipeline_uuid": "pipesv2_selection",
                     "status": "COMPLETED",
                 }
             },
@@ -21,7 +21,7 @@ from handlers.pre_filtered_approval import PreFilteredApprovalHandler
         (
             {
                 "payload": {
-                    "pipeline_uuid": "pipesv2_wrangling",
+                    "pipeline_uuid": "pipesv2_approval",
                     "status": "COMPLETED",
                 }
             },
@@ -30,7 +30,7 @@ from handlers.pre_filtered_approval import PreFilteredApprovalHandler
         (
             {
                 "payload": {
-                    "pipeline_uuid": "pipesv2_approval",
+                    "pipeline_uuid": "pipesv2_selection",
                     "status": "RUNNING",
                 }
             },
@@ -41,7 +41,7 @@ from handlers.pre_filtered_approval import PreFilteredApprovalHandler
 )
 def test_match(mocker: MockerFixture, decoded_message, expected):
     """Test that match returns the expected result for various message configurations."""
-    handler = PreFilteredApprovalHandler(
+    handler = PostFilteredSelectionHandler(
         monitoring_client=mocker.MagicMock(),
         bq_client=mocker.MagicMock(),
         run_project_id="test-project",
@@ -52,8 +52,8 @@ def test_match(mocker: MockerFixture, decoded_message, expected):
 
 
 def test_handle_delegates_to_base(mocker: MockerFixture):
-    """Test that handle delegates to _handle_pre_filtered_metrics with correct parameters."""
-    handler = PreFilteredApprovalHandler(
+    """Test that handle delegates to _handle_post_filtered_metrics with correct parameters."""
+    handler = PostFilteredSelectionHandler(
         monitoring_client=mocker.MagicMock(),
         bq_client=mocker.MagicMock(),
         run_project_id="test-project",
@@ -63,27 +63,27 @@ def test_handle_delegates_to_base(mocker: MockerFixture):
     decoded_message = {
         "source_timestamp": "2024-01-15T10:30:00Z",
         "payload": {
-            "pipeline_uuid": "pipesv2_approval",
+            "pipeline_uuid": "pipesv2_selection",
             "status": "COMPLETED",
             "variables": {
-                "partner": "porto",
-                "unprocessable_claims_input_table": "dataset.unprocessable",
-                "processable_claims_input_table": "dataset.processable",
-                "excluded_savings_input_table": "dataset.excluded",
+                "partner": "athena",
+                "excluded_savings_output_table": "dataset.excluded",
                 "savings_input_table": "dataset.savings",
             },
         },
     }
 
     # Mock the base handler method
-    mock_handle_pre_filtered_metrics = mocker.patch.object(handler, "_handle_pre_filtered_metrics")
+    mock_handle_post_filtered_metrics = mocker.patch.object(
+        handler, "_handle_post_filtered_metrics"
+    )
     handler.handle(decoded_message)
 
     # Verify it was called with the correct parameters
-    mock_handle_pre_filtered_metrics.assert_called_once_with(
+    mock_handle_post_filtered_metrics.assert_called_once_with(
         decoded_message=decoded_message,
-        pipeline_uuid="pipesv2_approval",
-        unprocessable_table_var="unprocessable_claims_input_table",
-        processable_table_var="processable_claims_input_table",
-        approved_value="true",
+        pipeline_uuid="pipesv2_selection",
+        excluded_table_var="excluded_savings_output_table",
+        savings_table_var="savings_input_table",
+        approved_value="false",
     )

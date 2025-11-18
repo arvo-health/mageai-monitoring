@@ -1,25 +1,25 @@
-"""Handler for calculating and emitting pre-processing filter metrics.
+"""Handler for calculating and emitting post-processing filter metrics for approval pipeline.
 
 This handler processes completion events from the pipesv2_approval pipeline
-to compute aggregate metrics from pre-processing filter results. It queries
-BigQuery to aggregate claim values and emits metrics that track the total
-value of claims that were filtered during the pre-processing stage.
+to compute aggregate metrics from post-processing filter results. It queries
+BigQuery to aggregate savings values and emits metrics that track the total
+value of savings that were filtered during the post-processing stage.
 """
 
 from google.cloud import bigquery, monitoring_v3
 
-from handlers.pre_filtered_base import PreFilteredBaseHandler
+from handlers.post_filtered_base import PostFilteredBaseHandler
 
 
-class PreFilteredApprovalHandler(PreFilteredBaseHandler):
+class PostFilteredApprovalHandler(PostFilteredBaseHandler):
     """
-    Calculates and emits metrics for pre-processing filter results.
+    Calculates and emits metrics for post-processing filter results from approval pipeline.
 
     When the pipesv2_approval pipeline completes, this handler queries BigQuery
-    to aggregate claim values from the pre-processing filter stage and emits
-    two metrics: one representing the total value of filtered claims, and another
-    representing the relative value (ratio of filtered claims to processable claims).
-    This enables monitoring of the financial impact of pre-processing filters applied
+    to aggregate savings values from the post-processing filter stage and emits
+    two metrics: one representing the total value of filtered savings, and another
+    representing the relative value (ratio of excluded savings to total savings).
+    This enables monitoring of the financial impact of post-processing filters applied
     during the approval pipeline execution.
     """
 
@@ -46,7 +46,7 @@ class PreFilteredApprovalHandler(PreFilteredBaseHandler):
         Determine if this handler should process the event.
 
         Matches events representing successful completion of the pipesv2_approval
-        pipeline, which triggers the calculation of pre-processing filter metrics.
+        pipeline, which triggers the calculation of post-processing filter metrics.
 
         Args:
             decoded_message: The decoded message dictionary to check
@@ -63,29 +63,29 @@ class PreFilteredApprovalHandler(PreFilteredBaseHandler):
 
     def handle(self, decoded_message: dict) -> None:
         """
-        Calculate pre-processing filter metrics and emit to Cloud Monitoring.
+        Calculate post-processing filter metrics and emit to Cloud Monitoring.
 
-        Queries BigQuery to aggregate the total value of claims filtered during
-        the pre-processing stage, then emits metrics representing the total value.
-        If the processable table exists, also emits a relative value metric calculated
-        as the ratio of filtered claims value to the total value of all claims.
+        Queries BigQuery to aggregate the total value of savings filtered during
+        the post-processing stage, then emits metrics representing both the total
+        and relative values. The relative metric is calculated as the ratio of
+        excluded savings value to the total value of all savings.
 
-        If the unprocessable table doesn't exist, assumes its sum is 0.
-        If the processable table doesn't exist, only emits the absolute value metric
-        (not the relative one).
+        If the excluded table doesn't exist, assumes its sum is 0.
+        The savings table must exist; if it doesn't, the exception will be raised.
 
         Args:
             decoded_message: The decoded message dictionary containing pipeline completion data
 
         Raises:
             HandlerBadRequestError: If the required input table variables
-                (unprocessable_claims_input_table or processable_claims_input_table)
+                (excluded_savings_input_table or savings_input_table)
                 are not present in the event
+            NotFound: If the savings table doesn't exist
         """
-        self._handle_pre_filtered_metrics(
+        self._handle_post_filtered_metrics(
             decoded_message=decoded_message,
             pipeline_uuid="pipesv2_approval",
-            unprocessable_table_var="unprocessable_claims_input_table",
-            processable_table_var="processable_claims_input_table",
+            excluded_table_var="excluded_savings_input_table",
+            savings_table_var="savings_input_table",
             approved_value="true",
         )
