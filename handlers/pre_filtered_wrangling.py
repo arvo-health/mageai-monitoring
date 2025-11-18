@@ -70,9 +70,13 @@ class PreFilteredWranglingHandler(PreFilteredBaseHandler):
         Calculate pre-processing filter metrics and emit to Cloud Monitoring.
 
         Queries BigQuery to aggregate the total value of claims filtered during
-        the pre-processing stage, then emits metrics representing both the total
-        and relative values. The relative metric is calculated as the ratio of
-        filtered claims value to the total value of processable claims.
+        the pre-processing stage, then emits metrics representing the total value.
+        If the processable table exists, also emits a relative value metric calculated
+        as the ratio of filtered claims value to the total value of all claims.
+
+        If the unprocessable table doesn't exist, assumes its sum is 0.
+        If the processable table doesn't exist, only emits the absolute value metric
+        (not the relative one).
 
         Args:
             decoded_message: The decoded message dictionary containing pipeline completion data

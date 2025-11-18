@@ -6,6 +6,7 @@ pre-processing filter metrics from pipeline completion events.
 
 from datetime import datetime
 
+from google.api_core.exceptions import NotFound
 from google.cloud import bigquery, monitoring_v3
 
 from handlers.base import Handler, HandlerBadRequestError
@@ -55,9 +56,14 @@ class PreFilteredBaseHandler(Handler):
         Calculate pre-processing filter metrics and emit to Cloud Monitoring.
 
         Queries BigQuery to aggregate the total value of claims filtered during
-        the pre-processing stage, then emits metrics representing both the total
-        and relative values. The relative metric is calculated as the ratio of
-        filtered claims value to the total value of all claims (unprocessable + processable).
+        the pre-processing stage, then emits metrics representing the total value.
+        If the processable table exists, also emits a relative value metric calculated
+        as the ratio of filtered claims value to the total value of all claims
+        (unprocessable + processable).
+
+        If the unprocessable table doesn't exist, assumes its sum is 0.
+        If the processable table doesn't exist, only emits the absolute value metric
+        (not the relative one).
 
         Args:
             decoded_message: The decoded message dictionary containing pipeline completion data
@@ -99,33 +105,47 @@ class PreFilteredBaseHandler(Handler):
         full_unprocessable_table = ensure_full_table_ref(unprocessable_table)
         full_processable_table = ensure_full_table_ref(processable_table)
 
-        # Single BigQuery query to get both values
-        query = f"""
-        WITH unprocessable_sum AS (
+        # Check if tables exist and query them separately
+        # If unprocessable table doesn't exist, assume sum is 0
+        total_vl_pago = 0.0
+        try:
+            unprocessable_query = f"""
             SELECT COALESCE(SUM(vl_pago), 0) AS total_vl_pago
             FROM `{full_unprocessable_table}`
-        ),
-        processable_sum AS (
+            """
+            query_job = self.bq_client.query(unprocessable_query)
+            result = query_job.result()
+            row = next(result, None)
+            if row:
+                total_vl_pago = float(row.total_vl_pago or 0.0)
+        except NotFound:
+            # If table doesn't exist, assume sum is 0
+            total_vl_pago = 0.0
+
+        # If processable table doesn't exist, skip relative metric
+        processable_sum = None
+        try:
+            processable_query = f"""
             SELECT COALESCE(SUM(vl_pago), 0) AS sum_processable_vl_pago
             FROM `{full_processable_table}`
-        )
-        SELECT
-            u.total_vl_pago,
-            p.sum_processable_vl_pago,
-            CASE
-                WHEN (u.total_vl_pago + p.sum_processable_vl_pago) > 0
-                THEN u.total_vl_pago / (u.total_vl_pago + p.sum_processable_vl_pago)
-                ELSE 0
-            END AS relative_vl_pago
-        FROM unprocessable_sum u, processable_sum p
-        """
+            """
+            query_job = self.bq_client.query(processable_query)
+            result = query_job.result()
+            row = next(result, None)
+            if row:
+                processable_sum = float(row.sum_processable_vl_pago or 0.0)
+        except NotFound:
+            # If table doesn't exist, processable_sum remains None
+            processable_sum = None
 
-        query_job = self.bq_client.query(query)
-        result = query_job.result()
-        row = next(result, None)
-
-        total_vl_pago = float(row.total_vl_pago or 0.0)
-        relative_vl_pago = float(row.relative_vl_pago or 0.0)
+        # Calculate relative value only if processable table exists
+        relative_vl_pago = None
+        if processable_sum is not None:
+            total_sum = total_vl_pago + processable_sum
+            if total_sum > 0:
+                relative_vl_pago = total_vl_pago / total_sum
+            else:
+                relative_vl_pago = 0.0
 
         # Build labels: partner and approved
         labels = {
@@ -154,11 +174,13 @@ class PreFilteredBaseHandler(Handler):
         )
 
         # Emit metric representing relative value of claims filtered in pre-processing
-        emit_gauge_metric(
-            monitoring_client=self.monitoring_client,
-            project_id=self.run_project_id,
-            name="claims/pipeline/filtered_pre/vl_pago/relative",
-            value=relative_vl_pago,
-            labels=labels,
-            timestamp=source_timestamp,
-        )
+        # Only emit if processable table exists (processable_sum is not None)
+        if relative_vl_pago is not None:
+            emit_gauge_metric(
+                monitoring_client=self.monitoring_client,
+                project_id=self.run_project_id,
+                name="claims/pipeline/filtered_pre/vl_pago/relative",
+                value=relative_vl_pago,
+                labels=labels,
+                timestamp=source_timestamp,
+            )

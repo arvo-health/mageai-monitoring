@@ -74,6 +74,9 @@ class PostFilteredSelectionHandler(PostFilteredBaseHandler):
         and relative values. The relative metric is calculated as the ratio of
         excluded savings value to the total value of all savings.
 
+        If the excluded table doesn't exist, assumes its sum is 0.
+        The savings table must exist; if it doesn't, the exception will be raised.
+
         Args:
             decoded_message: The decoded message dictionary containing pipeline completion data
 
@@ -81,6 +84,7 @@ class PostFilteredSelectionHandler(PostFilteredBaseHandler):
             HandlerBadRequestError: If the required input table variables
                 (excluded_savings_output_table or savings_input_table)
                 are not present in the event
+            NotFound: If the savings table doesn't exist
         """
         self._handle_post_filtered_metrics(
             decoded_message=decoded_message,

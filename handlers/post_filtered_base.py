@@ -6,6 +6,7 @@ post-processing filter metrics from pipeline completion events.
 
 from datetime import datetime
 
+from google.api_core.exceptions import NotFound
 from google.cloud import bigquery, monitoring_v3
 
 from handlers.base import Handler, HandlerBadRequestError
@@ -59,6 +60,9 @@ class PostFilteredBaseHandler(Handler):
         and relative values. The relative metric is calculated as the ratio of
         excluded savings value to the total value of all savings.
 
+        If the excluded table doesn't exist, assumes its sum is 0.
+        The savings table must exist; if it doesn't, the exception will be raised.
+
         Args:
             decoded_message: The decoded message dictionary containing pipeline completion data
             pipeline_uuid: The pipeline UUID to verify (for defensive check)
@@ -69,6 +73,7 @@ class PostFilteredBaseHandler(Handler):
         Raises:
             HandlerBadRequestError: If the required input table variables are not present
                 in the event, or if the payload is missing
+            NotFound: If the savings table doesn't exist
         """
         payload = decoded_message.get("payload")
 
@@ -97,33 +102,38 @@ class PostFilteredBaseHandler(Handler):
         full_excluded_table = ensure_full_table_ref(excluded_table)
         full_savings_table = ensure_full_table_ref(savings_table)
 
-        # Single BigQuery query to get both values
-        query = f"""
-        WITH excluded_sum AS (
+        # Check if excluded table exists and query it separately
+        # If excluded table doesn't exist, assume sum is 0
+        total_vl_glosa_arvo = 0.0
+        try:
+            excluded_query = f"""
             SELECT COALESCE(SUM(vl_glosa_arvo), 0) AS total_vl_glosa_arvo
             FROM `{full_excluded_table}`
-        ),
-        savings_sum AS (
-            SELECT COALESCE(SUM(vl_glosa_arvo), 0) AS sum_savings_vl_glosa_arvo
-            FROM `{full_savings_table}`
-        )
-        SELECT
-            e.total_vl_glosa_arvo,
-            s.sum_savings_vl_glosa_arvo,
-            CASE
-                WHEN s.sum_savings_vl_glosa_arvo > 0
-                THEN e.total_vl_glosa_arvo / s.sum_savings_vl_glosa_arvo
-                ELSE 0
-            END AS relative_vl_glosa_arvo
-        FROM excluded_sum e, savings_sum s
-        """
+            """
+            query_job = self.bq_client.query(excluded_query)
+            result = query_job.result()
+            row = next(result, None)
+            if row:
+                total_vl_glosa_arvo = float(row.total_vl_glosa_arvo or 0.0)
+        except NotFound:
+            # If table doesn't exist, assume sum is 0
+            total_vl_glosa_arvo = 0.0
 
-        query_job = self.bq_client.query(query)
+        # Query savings table - must exist, so let exception be raised if it doesn't
+        savings_query = f"""
+        SELECT COALESCE(SUM(vl_glosa_arvo), 0) AS sum_savings_vl_glosa_arvo
+        FROM `{full_savings_table}`
+        """
+        query_job = self.bq_client.query(savings_query)
         result = query_job.result()
         row = next(result, None)
+        sum_savings_vl_glosa_arvo = float(row.sum_savings_vl_glosa_arvo or 0.0)
 
-        total_vl_glosa_arvo = float(row.total_vl_glosa_arvo or 0.0)
-        relative_vl_glosa_arvo = float(row.relative_vl_glosa_arvo or 0.0)
+        # Calculate relative value
+        if sum_savings_vl_glosa_arvo > 0:
+            relative_vl_glosa_arvo = total_vl_glosa_arvo / sum_savings_vl_glosa_arvo
+        else:
+            relative_vl_glosa_arvo = 0.0
 
         # Build labels: partner and approved
         labels = {
