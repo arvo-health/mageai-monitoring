@@ -3,7 +3,7 @@ name = "mageai-monitoring"
 version = "0.1.0"
 description = "GCP Cloud Run service for monitoring Mage.ai pipeline runs and emitting metrics to Cloud Monitoring"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "functions-framework>=3.5.0",
     "flask>=3.0.0",
@@ -11,6 +11,8 @@ dependencies = [
     "google-cloud-pubsub>=2.18.0",
     "google-cloud-bigquery>=3.13.0",
     "google-cloud-bigquery-storage>=2.22.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -31,7 +33,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["mageai_monitoring"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "tests_integration"]
@@ -41,7 +43,7 @@ python_functions = ["test_*"]
 asyncio_mode = "auto"
 addopts = [
     "-v",
-    "--cov=src",
+    "--cov=.",
     "--cov-report=term-missing",
     "--cov-report=html",
 ]
@@ -54,18 +56,18 @@ filterwarnings = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
-ignore = []
+ignore = ["N999"]  # Ignore invalid module name (project uses hyphen in name, not underscore)
 
 [tool.black]
 line-length = 100
-target-version = ["py311"]
+target-version = ["py312"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false

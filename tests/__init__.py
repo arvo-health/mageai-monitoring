@@ -1,2 +1,1 @@
-"""Unit tests for mageai-monitoring."""
-
+"""Integration tests for mageai-monitoring."""
