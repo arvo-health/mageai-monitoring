@@ -23,3 +23,25 @@ class MetricMatcher:
 
     def __repr__(self):
         return f"MetricMatcher(type={self.metric_type}, value={self.value}, labels={self.labels})"
+
+
+def assert_metrics_emitted(mock_monitoring_client, expected_calls: list) -> None:
+    """Assert that expected metric calls were made."""
+    actual_calls = mock_monitoring_client.create_time_series.call_args_list
+
+    for expected_call in expected_calls:
+        expected_name = expected_call.kwargs["name"]
+        expected_time_series_matcher = expected_call.kwargs["time_series"]
+
+        found = False
+        for actual_call in actual_calls:
+            if actual_call.kwargs.get("name") == expected_name:
+                actual_time_series = actual_call.kwargs.get("time_series", [])
+                if expected_time_series_matcher == actual_time_series:
+                    found = True
+                    break
+
+        assert found, (
+            f"Expected call not found: name={expected_name}, "
+            f"time_series={expected_time_series_matcher}"
+        )

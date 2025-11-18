@@ -2,11 +2,16 @@
 
 import pytest
 from cloudevents.http import CloudEvent
-from google.cloud import bigquery
 from pytest_mock import MockerFixture
 
 import main
-from tests.metrics import MetricMatcher
+from tests.bigquery import (
+    create_claims_tables,
+    create_dataset,
+    create_savings_table_with_data,
+)
+from tests.conftest import assert_response_success
+from tests.metrics import assert_metrics_emitted, MetricMatcher
 
 # Test data constants
 EXCLUDED_SAVINGS_ROWS = [
@@ -24,42 +29,6 @@ SAVINGS_ROWS = [
 SAVINGS_TOTAL = 2000.0
 
 RELATIVE_VALUE = EXCLUDED_SAVINGS_TOTAL / SAVINGS_TOTAL  # 0.25
-
-
-def _create_dataset(bigquery_client, dataset_id: str) -> None:
-    """Create a BigQuery dataset for testing."""
-    dataset = bigquery.Dataset(f"{bigquery_client.project}.{dataset_id}")
-    dataset.location = "US"
-    bigquery_client.create_dataset(dataset, exists_ok=True)
-
-
-def _create_savings_table_with_data(
-    bigquery_client, dataset_id: str, table_id: str, rows: list[dict]
-) -> None:
-    """Create a savings table and insert test data."""
-    schema = [
-        bigquery.SchemaField("vl_glosa_arvo", "FLOAT", mode="NULLABLE"),
-    ]
-    table = bigquery.Table(f"{bigquery_client.project}.{dataset_id}.{table_id}", schema=schema)
-    bigquery_client.create_table(table, exists_ok=True)
-    bigquery_client.insert_rows_json(f"{bigquery_client.project}.{dataset_id}.{table_id}", rows)
-
-
-def _create_claims_tables(bigquery_client, dataset_id: str) -> tuple[str, str]:
-    """Create dummy claims tables for pre-filtered handler (required but not queried)."""
-    unprocessable_table_id = "unprocessable_claims"
-    processable_table_id = "processable_claims"
-    claims_schema = [
-        bigquery.SchemaField("vl_pago", "FLOAT", mode="NULLABLE"),
-    ]
-
-    for table_id in [unprocessable_table_id, processable_table_id]:
-        table = bigquery.Table(
-            f"{bigquery_client.project}.{dataset_id}.{table_id}", schema=claims_schema
-        )
-        bigquery_client.create_table(table, exists_ok=True)
-
-    return unprocessable_table_id, processable_table_id
 
 
 def _create_cloud_event(
@@ -81,7 +50,7 @@ def _create_cloud_event(
     }
 
     if include_claims_tables:
-        unprocessable_table_id, processable_table_id = _create_claims_tables(
+        unprocessable_table_id, processable_table_id = create_claims_tables(
             bigquery_client, dataset_id
         )
         variables.update(
@@ -140,35 +109,6 @@ def _create_expected_metric_calls(
     ]
 
 
-def _assert_response_success(response) -> None:
-    """Assert that the handler response indicates success."""
-    assert response is not None
-    status_code = response[1] if isinstance(response, tuple) else response.status_code
-    assert status_code == 204
-
-
-def _assert_metrics_emitted(mock_monitoring_client, expected_calls: list) -> None:
-    """Assert that expected metric calls were made."""
-    actual_calls = mock_monitoring_client.create_time_series.call_args_list
-
-    for expected_call in expected_calls:
-        expected_name = expected_call.kwargs["name"]
-        expected_time_series_matcher = expected_call.kwargs["time_series"]
-
-        found = False
-        for actual_call in actual_calls:
-            if actual_call.kwargs.get("name") == expected_name:
-                actual_time_series = actual_call.kwargs.get("time_series", [])
-                if expected_time_series_matcher == actual_time_series:
-                    found = True
-                    break
-
-        assert found, (
-            f"Expected call not found: name={expected_name}, "
-            f"time_series={expected_time_series_matcher}"
-        )
-
-
 @pytest.mark.integration
 def test_post_filtered_base_handler_with_selection_pipeline(
     bigquery_client,
@@ -187,13 +127,13 @@ def test_post_filtered_base_handler_with_selection_pipeline(
     excluded_table_id = "excluded_savings"
     savings_table_id = "savings"
 
-    _create_dataset(bigquery_client, dataset_id)
+    create_dataset(bigquery_client, dataset_id)
 
     try:
-        _create_savings_table_with_data(
+        create_savings_table_with_data(
             bigquery_client, dataset_id, excluded_table_id, EXCLUDED_SAVINGS_ROWS
         )
-        _create_savings_table_with_data(bigquery_client, dataset_id, savings_table_id, SAVINGS_ROWS)
+        create_savings_table_with_data(bigquery_client, dataset_id, savings_table_id, SAVINGS_ROWS)
 
         event = _create_cloud_event(
             bigquery_client=bigquery_client,
@@ -216,8 +156,8 @@ def test_post_filtered_base_handler_with_selection_pipeline(
 
         response = main.handle_cloud_event(event)
 
-        _assert_response_success(response)
-        _assert_metrics_emitted(mock_monitoring_client, expected_calls)
+        assert_response_success(response)
+        assert_metrics_emitted(mock_monitoring_client, expected_calls)
 
     finally:
         bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
@@ -242,11 +182,11 @@ def test_post_filtered_base_handler_missing_excluded_table(
     excluded_table_id = "excluded_savings"
     savings_table_id = "savings"
 
-    _create_dataset(bigquery_client, dataset_id)
+    create_dataset(bigquery_client, dataset_id)
 
     try:
         # Only create savings table, not excluded table
-        _create_savings_table_with_data(bigquery_client, dataset_id, savings_table_id, SAVINGS_ROWS)
+        create_savings_table_with_data(bigquery_client, dataset_id, savings_table_id, SAVINGS_ROWS)
 
         event = _create_cloud_event(
             bigquery_client=bigquery_client,
@@ -272,8 +212,8 @@ def test_post_filtered_base_handler_missing_excluded_table(
 
         response = main.handle_cloud_event(event)
 
-        _assert_response_success(response)
-        _assert_metrics_emitted(mock_monitoring_client, expected_calls)
+        assert_response_success(response)
+        assert_metrics_emitted(mock_monitoring_client, expected_calls)
 
     finally:
         bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
@@ -297,13 +237,13 @@ def test_post_filtered_base_handler_with_approval_pipeline(
     excluded_table_id = "excluded_savings"
     savings_table_id = "savings"
 
-    _create_dataset(bigquery_client, dataset_id)
+    create_dataset(bigquery_client, dataset_id)
 
     try:
-        _create_savings_table_with_data(
+        create_savings_table_with_data(
             bigquery_client, dataset_id, excluded_table_id, EXCLUDED_SAVINGS_ROWS
         )
-        _create_savings_table_with_data(bigquery_client, dataset_id, savings_table_id, SAVINGS_ROWS)
+        create_savings_table_with_data(bigquery_client, dataset_id, savings_table_id, SAVINGS_ROWS)
 
         event = _create_cloud_event(
             bigquery_client=bigquery_client,
@@ -327,8 +267,8 @@ def test_post_filtered_base_handler_with_approval_pipeline(
 
         response = main.handle_cloud_event(event)
 
-        _assert_response_success(response)
-        _assert_metrics_emitted(mock_monitoring_client, expected_calls)
+        assert_response_success(response)
+        assert_metrics_emitted(mock_monitoring_client, expected_calls)
 
     finally:
         bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)

@@ -194,3 +194,10 @@ def sample_cloud_event(sample_pubsub_payload):
 
     event = CloudEvent(attributes, data)
     return event
+
+
+def assert_response_success(response) -> None:
+    """Assert that the handler response indicates success."""
+    assert response is not None
+    status_code = response[1] if isinstance(response, tuple) else response.status_code
+    assert status_code == 204

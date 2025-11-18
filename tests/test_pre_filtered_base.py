@@ -2,11 +2,16 @@
 
 import pytest
 from cloudevents.http import CloudEvent
-from google.cloud import bigquery
 from pytest_mock import MockerFixture
 
 import main
-from tests.metrics import MetricMatcher
+from tests.bigquery import (
+    create_claims_table_with_data,
+    create_dataset,
+    create_savings_tables,
+)
+from tests.conftest import assert_response_success
+from tests.metrics import assert_metrics_emitted, MetricMatcher
 
 # Test data constants
 UNPROCESSABLE_CLAIMS_ROWS = [
@@ -26,42 +31,6 @@ PROCESSABLE_CLAIMS_TOTAL = 4000.0
 RELATIVE_VALUE = UNPROCESSABLE_CLAIMS_TOTAL / (
     UNPROCESSABLE_CLAIMS_TOTAL + PROCESSABLE_CLAIMS_TOTAL
 )  # 0.2
-
-
-def _create_dataset(bigquery_client, dataset_id: str) -> None:
-    """Create a BigQuery dataset for testing."""
-    dataset = bigquery.Dataset(f"{bigquery_client.project}.{dataset_id}")
-    dataset.location = "US"
-    bigquery_client.create_dataset(dataset, exists_ok=True)
-
-
-def _create_claims_table_with_data(
-    bigquery_client, dataset_id: str, table_id: str, rows: list[dict]
-) -> None:
-    """Create a claims table and insert test data."""
-    schema = [
-        bigquery.SchemaField("vl_pago", "FLOAT", mode="NULLABLE"),
-    ]
-    table = bigquery.Table(f"{bigquery_client.project}.{dataset_id}.{table_id}", schema=schema)
-    bigquery_client.create_table(table, exists_ok=True)
-    bigquery_client.insert_rows_json(f"{bigquery_client.project}.{dataset_id}.{table_id}", rows)
-
-
-def _create_savings_tables(bigquery_client, dataset_id: str) -> tuple[str, str]:
-    """Create dummy savings tables for post-filtered handler (required but not queried)."""
-    excluded_table_id = "excluded_savings"
-    savings_table_id = "savings"
-    savings_schema = [
-        bigquery.SchemaField("vl_glosa_arvo", "FLOAT", mode="NULLABLE"),
-    ]
-
-    for table_id in [excluded_table_id, savings_table_id]:
-        table = bigquery.Table(
-            f"{bigquery_client.project}.{dataset_id}.{table_id}", schema=savings_schema
-        )
-        bigquery_client.create_table(table, exists_ok=True)
-
-    return excluded_table_id, savings_table_id
 
 
 def _create_cloud_event(
@@ -85,7 +54,7 @@ def _create_cloud_event(
     }
 
     if include_savings_tables:
-        excluded_table_id, savings_table_id = _create_savings_tables(bigquery_client, dataset_id)
+        excluded_table_id, savings_table_id = create_savings_tables(bigquery_client, dataset_id)
         variables.update(
             {
                 "excluded_savings_input_table": (
@@ -160,35 +129,6 @@ def _create_expected_metric_calls(
     return calls
 
 
-def _assert_response_success(response) -> None:
-    """Assert that the handler response indicates success."""
-    assert response is not None
-    status_code = response[1] if isinstance(response, tuple) else response.status_code
-    assert status_code == 204
-
-
-def _assert_metrics_emitted(mock_monitoring_client, expected_calls: list) -> None:
-    """Assert that expected metric calls were made."""
-    actual_calls = mock_monitoring_client.create_time_series.call_args_list
-
-    for expected_call in expected_calls:
-        expected_name = expected_call.kwargs["name"]
-        expected_time_series_matcher = expected_call.kwargs["time_series"]
-
-        found = False
-        for actual_call in actual_calls:
-            if actual_call.kwargs.get("name") == expected_name:
-                actual_time_series = actual_call.kwargs.get("time_series", [])
-                if expected_time_series_matcher == actual_time_series:
-                    found = True
-                    break
-
-        assert found, (
-            f"Expected call not found: name={expected_name}, "
-            f"time_series={expected_time_series_matcher}"
-        )
-
-
 @pytest.mark.integration
 def test_pre_filtered_base_handler_with_approval_pipeline(
     bigquery_client,
@@ -207,13 +147,13 @@ def test_pre_filtered_base_handler_with_approval_pipeline(
     unprocessable_table_id = "unprocessable_claims"
     processable_table_id = "processable_claims"
 
-    _create_dataset(bigquery_client, dataset_id)
+    create_dataset(bigquery_client, dataset_id)
 
     try:
-        _create_claims_table_with_data(
+        create_claims_table_with_data(
             bigquery_client, dataset_id, unprocessable_table_id, UNPROCESSABLE_CLAIMS_ROWS
         )
-        _create_claims_table_with_data(
+        create_claims_table_with_data(
             bigquery_client, dataset_id, processable_table_id, PROCESSABLE_CLAIMS_ROWS
         )
 
@@ -239,8 +179,8 @@ def test_pre_filtered_base_handler_with_approval_pipeline(
 
         response = main.handle_cloud_event(event)
 
-        _assert_response_success(response)
-        _assert_metrics_emitted(mock_monitoring_client, expected_calls)
+        assert_response_success(response)
+        assert_metrics_emitted(mock_monitoring_client, expected_calls)
 
     finally:
         bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
@@ -265,11 +205,11 @@ def test_pre_filtered_base_handler_missing_unprocessable_table(
     unprocessable_table_id = "unprocessable_claims"
     processable_table_id = "processable_claims"
 
-    _create_dataset(bigquery_client, dataset_id)
+    create_dataset(bigquery_client, dataset_id)
 
     try:
         # Only create processable table, not unprocessable table
-        _create_claims_table_with_data(
+        create_claims_table_with_data(
             bigquery_client, dataset_id, processable_table_id, PROCESSABLE_CLAIMS_ROWS
         )
 
@@ -297,8 +237,8 @@ def test_pre_filtered_base_handler_missing_unprocessable_table(
 
         response = main.handle_cloud_event(event)
 
-        _assert_response_success(response)
-        _assert_metrics_emitted(mock_monitoring_client, expected_calls)
+        assert_response_success(response)
+        assert_metrics_emitted(mock_monitoring_client, expected_calls)
 
     finally:
         bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
@@ -322,11 +262,11 @@ def test_pre_filtered_base_handler_missing_processable_table(
     unprocessable_table_id = "unprocessable_claims"
     processable_table_id = "processable_claims"
 
-    _create_dataset(bigquery_client, dataset_id)
+    create_dataset(bigquery_client, dataset_id)
 
     try:
         # Only create unprocessable table, not processable table
-        _create_claims_table_with_data(
+        create_claims_table_with_data(
             bigquery_client, dataset_id, unprocessable_table_id, UNPROCESSABLE_CLAIMS_ROWS
         )
 
@@ -353,8 +293,8 @@ def test_pre_filtered_base_handler_missing_processable_table(
 
         response = main.handle_cloud_event(event)
 
-        _assert_response_success(response)
-        _assert_metrics_emitted(mock_monitoring_client, expected_calls)
+        assert_response_success(response)
+        assert_metrics_emitted(mock_monitoring_client, expected_calls)
 
     finally:
         bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
@@ -378,13 +318,13 @@ def test_pre_filtered_base_handler_with_wrangling_pipeline(
     unprocessable_table_id = "unprocessable_claims"
     processable_table_id = "processable_claims"
 
-    _create_dataset(bigquery_client, dataset_id)
+    create_dataset(bigquery_client, dataset_id)
 
     try:
-        _create_claims_table_with_data(
+        create_claims_table_with_data(
             bigquery_client, dataset_id, unprocessable_table_id, UNPROCESSABLE_CLAIMS_ROWS
         )
-        _create_claims_table_with_data(
+        create_claims_table_with_data(
             bigquery_client, dataset_id, processable_table_id, PROCESSABLE_CLAIMS_ROWS
         )
 
@@ -409,8 +349,8 @@ def test_pre_filtered_base_handler_with_wrangling_pipeline(
 
         response = main.handle_cloud_event(event)
 
-        _assert_response_success(response)
-        _assert_metrics_emitted(mock_monitoring_client, expected_calls)
+        assert_response_success(response)
+        assert_metrics_emitted(mock_monitoring_client, expected_calls)
 
     finally:
         bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
