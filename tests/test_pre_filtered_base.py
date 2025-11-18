@@ -123,7 +123,7 @@ def _create_expected_metric_calls(
     relative_value: float | None = None,
 ) -> list:
     """Create expected metric call matchers.
-    
+
     Args:
         mocker: Mocker fixture
         partner: Partner name
