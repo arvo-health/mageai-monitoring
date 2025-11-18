@@ -224,6 +224,62 @@ def test_post_filtered_base_handler_with_selection_pipeline(
 
 
 @pytest.mark.integration
+def test_post_filtered_base_handler_missing_excluded_table(
+    bigquery_client,
+    mock_monitoring_client,
+    flask_app,
+    mocker: MockerFixture,
+):
+    """Integration test for PostFilteredBaseHandler when excluded table doesn't exist.
+
+    This test:
+    1. Creates only the savings table (excluded table doesn't exist)
+    2. Triggers the handler with a pipesv2_approval completion event
+    3. Verifies that excluded sum is assumed to be 0
+    4. Verifies both total and relative metrics are emitted correctly
+    """
+    dataset_id = "test_dataset"
+    excluded_table_id = "excluded_savings"
+    savings_table_id = "savings"
+
+    _create_dataset(bigquery_client, dataset_id)
+
+    try:
+        # Only create savings table, not excluded table
+        _create_savings_table_with_data(bigquery_client, dataset_id, savings_table_id, SAVINGS_ROWS)
+
+        event = _create_cloud_event(
+            bigquery_client=bigquery_client,
+            dataset_id=dataset_id,
+            pipeline_uuid="pipesv2_approval",
+            partner="cemig",
+            excluded_table_id=excluded_table_id,  # This table doesn't exist
+            savings_table_id=savings_table_id,
+            excluded_table_var="excluded_savings_input_table",
+            savings_table_var="savings_input_table",
+            include_claims_tables=True,
+        )
+
+        # Excluded sum should be 0 (table doesn't exist)
+        # Relative value should be 0 / 2000 = 0
+        expected_calls = _create_expected_metric_calls(
+            mocker,
+            partner="cemig",
+            approved="true",
+            total_value=0.0,  # Excluded table doesn't exist, so sum is 0
+            relative_value=0.0,  # 0 / 2000 = 0
+        )
+
+        response = main.handle_cloud_event(event)
+
+        _assert_response_success(response)
+        _assert_metrics_emitted(mock_monitoring_client, expected_calls)
+
+    finally:
+        bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
+
+
+@pytest.mark.integration
 def test_post_filtered_base_handler_with_approval_pipeline(
     bigquery_client,
     mock_monitoring_client,
