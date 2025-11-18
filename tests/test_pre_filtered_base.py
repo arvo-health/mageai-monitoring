@@ -11,7 +11,7 @@ from tests.bigquery import (
     create_savings_tables,
 )
 from tests.conftest import assert_response_success
-from tests.metrics import assert_metrics_emitted, MetricMatcher
+from tests.metrics import MetricMatcher, assert_metrics_emitted
 
 # Test data constants
 UNPROCESSABLE_CLAIMS_ROWS = [

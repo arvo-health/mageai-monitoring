@@ -66,4 +66,3 @@ def create_claims_tables(bigquery_client, dataset_id: str) -> tuple[str, str]:
         bigquery_client.create_table(table, exists_ok=True)
 
     return unprocessable_table_id, processable_table_id
-

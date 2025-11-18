@@ -11,7 +11,7 @@ from tests.bigquery import (
     create_savings_table_with_data,
 )
 from tests.conftest import assert_response_success
-from tests.metrics import assert_metrics_emitted, MetricMatcher
+from tests.metrics import MetricMatcher, assert_metrics_emitted
 
 # Test data constants
 EXCLUDED_SAVINGS_ROWS = [
