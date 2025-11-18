@@ -109,6 +109,9 @@ class PreFilteredBaseHandler(Handler):
         # If unprocessable table doesn't exist, assume sum is 0
         total_vl_pago = 0.0
         try:
+            # Check if table exists first to avoid hanging on query
+            self.bq_client.get_table(full_unprocessable_table)
+            # Table exists, so query it
             unprocessable_query = f"""
             SELECT COALESCE(SUM(vl_pago), 0) AS total_vl_pago
             FROM `{full_unprocessable_table}`
@@ -125,6 +128,9 @@ class PreFilteredBaseHandler(Handler):
         # If processable table doesn't exist, skip relative metric
         processable_sum = None
         try:
+            # Check if table exists first to avoid hanging on query
+            self.bq_client.get_table(full_processable_table)
+            # Table exists, so query it
             processable_query = f"""
             SELECT COALESCE(SUM(vl_pago), 0) AS sum_processable_vl_pago
             FROM `{full_processable_table}`

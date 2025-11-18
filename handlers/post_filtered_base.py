@@ -106,6 +106,9 @@ class PostFilteredBaseHandler(Handler):
         # If excluded table doesn't exist, assume sum is 0
         total_vl_glosa_arvo = 0.0
         try:
+            # Check if table exists first to avoid hanging on query
+            self.bq_client.get_table(full_excluded_table)
+            # Table exists, so query it
             excluded_query = f"""
             SELECT COALESCE(SUM(vl_glosa_arvo), 0) AS total_vl_glosa_arvo
             FROM `{full_excluded_table}`
