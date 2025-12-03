@@ -201,3 +201,60 @@ def assert_response_success(response) -> None:
     assert response is not None
     status_code = response[1] if isinstance(response, tuple) else response.status_code
     assert status_code == 204
+
+
+@pytest.fixture(scope="function")
+def dispatch_event(mock_monitoring_client, bigquery_client):
+    """
+    Fixture that provides a helper function for dispatching events with specific handlers.
+
+    This fixture creates a dispatcher with only the specified handler classes,
+    allowing tests to isolate handler behavior without patching main.create_handlers.
+
+    Usage:
+        def test_something(dispatch_event, ...):
+            response = dispatch_event(event, [ProcessableApprovalHandler])
+
+    Args:
+        mock_monitoring_client: Mocked monitoring client fixture
+        bigquery_client: BigQuery client fixture
+
+    Returns:
+        A function that takes (cloud_event, handler_classes) and returns the response
+    """
+    from cloudevents.http import CloudEvent
+
+    from config import Config
+    from dispatcher import HandlerDispatcher
+    from handlers.base import Handler
+
+    config = Config()
+
+    def _dispatch(cloud_event: CloudEvent, handler_classes: list[type[Handler]]):
+        """
+        Dispatch a cloud event with only the specified handler classes.
+
+        Args:
+            cloud_event: The CloudEvent to dispatch
+            handler_classes: List of handler classes to instantiate and use
+
+        Returns:
+            Response from the dispatcher
+        """
+        handlers = [
+            handler_class(
+                monitoring_client=mock_monitoring_client,
+                bq_client=bigquery_client,
+                run_project_id=config.cloud_run_project_id,
+                data_project_id=config.bigquery_project_id,
+            )
+            for handler_class in handler_classes
+        ]
+        dispatcher = HandlerDispatcher(
+            handlers=handlers,
+            monitoring_client=mock_monitoring_client,
+            project_id=config.cloud_run_project_id,
+        )
+        return dispatcher.dispatch(cloud_event)
+
+    return _dispatch
