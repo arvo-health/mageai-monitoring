@@ -1,9 +1,9 @@
-"""Unit tests for PreFilteredApprovalHandler."""
+"""Unit tests for ProcessableApprovalHandler."""
 
 import pytest
 from pytest_mock import MockerFixture
 
-from handlers.pre_filtered_approval import PreFilteredApprovalHandler
+from handlers.processable_approval import ProcessableApprovalHandler
 
 
 @pytest.mark.parametrize(
@@ -41,7 +41,7 @@ from handlers.pre_filtered_approval import PreFilteredApprovalHandler
 )
 def test_match(mocker: MockerFixture, decoded_message, expected):
     """Test that match returns the expected result for various message configurations."""
-    handler = PreFilteredApprovalHandler(
+    handler = ProcessableApprovalHandler(
         monitoring_client=mocker.MagicMock(),
         bq_client=mocker.MagicMock(),
         run_project_id="test-project",
@@ -52,8 +52,8 @@ def test_match(mocker: MockerFixture, decoded_message, expected):
 
 
 def test_handle_delegates_to_base(mocker: MockerFixture):
-    """Test that handle delegates to _handle_pre_filtered_metrics with correct parameters."""
-    handler = PreFilteredApprovalHandler(
+    """Test that handle delegates to _handle_processable_metrics with correct parameters."""
+    handler = ProcessableApprovalHandler(
         monitoring_client=mocker.MagicMock(),
         bq_client=mocker.MagicMock(),
         run_project_id="test-project",
@@ -67,8 +67,8 @@ def test_handle_delegates_to_base(mocker: MockerFixture):
             "status": "COMPLETED",
             "variables": {
                 "partner": "porto",
-                "unprocessable_claims_input_table": "dataset.unprocessable",
                 "processable_claims_input_table": "dataset.processable",
+                "unprocessable_claims_input_table": "dataset.unprocessable",
                 "excluded_savings_input_table": "dataset.excluded",
                 "savings_input_table": "dataset.savings",
             },
@@ -76,14 +76,14 @@ def test_handle_delegates_to_base(mocker: MockerFixture):
     }
 
     # Mock the base handler method
-    mock_handle_pre_filtered_metrics = mocker.patch.object(handler, "_handle_pre_filtered_metrics")
+    mock_handle_processable_metrics = mocker.patch.object(handler, "_handle_processable_metrics")
     handler.handle(decoded_message)
 
     # Verify it was called with the correct parameters
-    mock_handle_pre_filtered_metrics.assert_called_once_with(
+    mock_handle_processable_metrics.assert_called_once_with(
         decoded_message=decoded_message,
         pipeline_uuid="pipesv2_approval",
-        unprocessable_table_var="unprocessable_claims_input_table",
         processable_table_var="processable_claims_input_table",
+        unprocessable_table_var="unprocessable_claims_input_table",
         approved_value="true",
     )
