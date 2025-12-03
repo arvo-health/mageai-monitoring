@@ -4,7 +4,8 @@ import pytest
 from cloudevents.http import CloudEvent
 from pytest_mock import MockerFixture
 
-import main
+from handlers.post_filtered_approval import PostFilteredApprovalHandler
+from handlers.post_filtered_selection import PostFilteredSelectionHandler
 from tests.bigquery import (
     create_claims_tables,
     create_dataset,
@@ -115,6 +116,7 @@ def test_post_filtered_base_handler_with_selection_pipeline(
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
+    dispatch_event,
 ):
     """Integration test for PostFilteredBaseHandler via selection pipeline.
 
@@ -154,7 +156,7 @@ def test_post_filtered_base_handler_with_selection_pipeline(
             relative_value=RELATIVE_VALUE,
         )
 
-        response = main.handle_cloud_event(event)
+        response = dispatch_event(event, [PostFilteredSelectionHandler])
 
         assert_response_success(response)
         assert_metrics_emitted(mock_monitoring_client, expected_calls)
@@ -169,6 +171,7 @@ def test_post_filtered_base_handler_missing_excluded_table(
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
+    dispatch_event,
 ):
     """Integration test for PostFilteredBaseHandler when excluded table doesn't exist.
 
@@ -210,7 +213,7 @@ def test_post_filtered_base_handler_missing_excluded_table(
             relative_value=0.0,  # 0 / 2000 = 0
         )
 
-        response = main.handle_cloud_event(event)
+        response = dispatch_event(event, [PostFilteredApprovalHandler])
 
         assert_response_success(response)
         assert_metrics_emitted(mock_monitoring_client, expected_calls)
@@ -225,6 +228,7 @@ def test_post_filtered_base_handler_with_approval_pipeline(
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
+    dispatch_event,
 ):
     """Integration test for PostFilteredBaseHandler via approval pipeline.
 
@@ -265,7 +269,7 @@ def test_post_filtered_base_handler_with_approval_pipeline(
             relative_value=RELATIVE_VALUE,
         )
 
-        response = main.handle_cloud_event(event)
+        response = dispatch_event(event, [PostFilteredApprovalHandler])
 
         assert_response_success(response)
         assert_metrics_emitted(mock_monitoring_client, expected_calls)

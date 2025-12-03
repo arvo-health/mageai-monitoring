@@ -4,7 +4,8 @@ import pytest
 from cloudevents.http import CloudEvent
 from pytest_mock import MockerFixture
 
-import main
+from handlers.processable_approval import ProcessableApprovalHandler
+from handlers.processable_wrangling import ProcessableWranglingHandler
 from tests.bigquery import (
     create_claims_table_with_data,
     create_dataset,
@@ -134,6 +135,7 @@ def test_processable_base_handler_with_approval_pipeline(
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
+    dispatch_event,
 ):
     """Integration test for ProcessableBaseHandler via approval pipeline.
 
@@ -176,7 +178,7 @@ def test_processable_base_handler_with_approval_pipeline(
             relative_value=RELATIVE_VALUE,
         )
 
-        response = main.handle_cloud_event(event)
+        response = dispatch_event(event, [ProcessableApprovalHandler])
 
         assert_response_success(response)
         assert_metrics_emitted(mock_monitoring_client, expected_calls)
@@ -191,6 +193,7 @@ def test_processable_base_handler_with_wrangling_pipeline(
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
+    dispatch_event,
 ):
     """Integration test for ProcessableBaseHandler via wrangling pipeline.
 
@@ -232,7 +235,7 @@ def test_processable_base_handler_with_wrangling_pipeline(
             relative_value=RELATIVE_VALUE,
         )
 
-        response = main.handle_cloud_event(event)
+        response = dispatch_event(event, [ProcessableWranglingHandler])
 
         assert_response_success(response)
         assert_metrics_emitted(mock_monitoring_client, expected_calls)
@@ -247,6 +250,7 @@ def test_processable_base_handler_missing_processable_table(
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
+    dispatch_event,
 ):
     """Integration test for ProcessableBaseHandler when processable table doesn't exist.
 
@@ -290,7 +294,7 @@ def test_processable_base_handler_missing_processable_table(
             relative_value=0.0,  # 0 / (0 + 1000) = 0
         )
 
-        response = main.handle_cloud_event(event)
+        response = dispatch_event(event, [ProcessableApprovalHandler])
 
         assert_response_success(response)
         assert_metrics_emitted(mock_monitoring_client, expected_calls)
@@ -305,6 +309,7 @@ def test_processable_base_handler_missing_unprocessable_table(
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
+    dispatch_event,
 ):
     """Integration test for ProcessableBaseHandler when unprocessable table doesn't exist.
 
@@ -347,7 +352,7 @@ def test_processable_base_handler_missing_unprocessable_table(
             relative_value=1.0,  # 4000 / (4000 + 0) = 1.0
         )
 
-        response = main.handle_cloud_event(event)
+        response = dispatch_event(event, [ProcessableWranglingHandler])
 
         assert_response_success(response)
         assert_metrics_emitted(mock_monitoring_client, expected_calls)
@@ -362,6 +367,7 @@ def test_processable_base_handler_both_tables_missing(
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
+    dispatch_event,
 ):
     """Integration test for ProcessableBaseHandler when both tables don't exist.
 
@@ -399,7 +405,7 @@ def test_processable_base_handler_both_tables_missing(
             total_value=0.0,  # Both tables don't exist, so sum is 0
         )
 
-        response = main.handle_cloud_event(event)
+        response = dispatch_event(event, [ProcessableApprovalHandler])
 
         assert_response_success(response)
         assert_metrics_emitted(mock_monitoring_client, expected_calls)
