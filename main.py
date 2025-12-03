@@ -87,6 +87,7 @@ def create_handlers(
             run_project_id=config.cloud_run_project_id,
             data_project_id=config.bigquery_project_id,
         ),
+<<<<<<< HEAD
         NewProvidersApprovalHandler(
             monitoring_client=monitoring_client,
             bq_client=bq_client,
@@ -99,6 +100,8 @@ def create_handlers(
             run_project_id=config.cloud_run_project_id,
             data_project_id=config.bigquery_project_id,
         ),
+=======
+>>>>>>> a28b559 (feat: savings approval)
     ]
 
 
