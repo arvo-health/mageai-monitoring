@@ -9,6 +9,8 @@ from flask import make_response
 from bigquery import create_bigquery_client
 from config import Config
 from dispatcher import HandlerDispatcher
+from handlers.new_beneficiaries_approval import NewBeneficiariesApprovalHandler
+from handlers.new_beneficiaries_wrangling import NewBeneficiariesWranglingHandler
 from handlers.new_providers_approval import NewProvidersApprovalHandler
 from handlers.new_providers_wrangling import NewProvidersWranglingHandler
 from handlers.pipeline_run import PipelineRunHandler
@@ -87,7 +89,6 @@ def create_handlers(
             run_project_id=config.cloud_run_project_id,
             data_project_id=config.bigquery_project_id,
         ),
-<<<<<<< HEAD
         NewProvidersApprovalHandler(
             monitoring_client=monitoring_client,
             bq_client=bq_client,
@@ -100,8 +101,18 @@ def create_handlers(
             run_project_id=config.cloud_run_project_id,
             data_project_id=config.bigquery_project_id,
         ),
-=======
->>>>>>> a28b559 (feat: savings approval)
+        NewBeneficiariesApprovalHandler(
+            monitoring_client=monitoring_client,
+            bq_client=bq_client,
+            run_project_id=config.cloud_run_project_id,
+            data_project_id=config.bigquery_project_id,
+        ),
+        NewBeneficiariesWranglingHandler(
+            monitoring_client=monitoring_client,
+            bq_client=bq_client,
+            run_project_id=config.cloud_run_project_id,
+            data_project_id=config.bigquery_project_id,
+        ),
     ]
 
 
