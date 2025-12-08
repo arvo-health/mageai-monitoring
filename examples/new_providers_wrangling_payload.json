@@ -1,0 +1,104 @@
+{
+  "type": "google.cloud.pubsub.topic.v1.messagePublished",
+  "source": "//pubsub.googleapis.com/projects/local-project/topics/local-topic",
+  "specversion": "1.0",
+  "id": "local-test-event-123",
+  "data": {
+    "uuid": "8df75c7a-b93d-4b79-a8c6-cd0a00000000",
+    "read_timestamp": "2025-11-11T16:52:59.082000Z",
+    "source_timestamp": "2025-11-11T16:52:59.075000Z",
+    "object": "public_pipeline_run",
+    "read_method": "postgresql-cdc",
+    "stream_name": "projects/575686610682/locations/us-east1/streams/mageai-cdc-stream",
+    "schema_key": "69db90b9a8c1a263696eb5cbdf57404bd2a9b7f4",
+    "sort_keys": [1762879979075, "D8/68018B38"],
+    "source_metadata": {
+      "schema": "public",
+      "table": "pipeline_run",
+      "is_deleted": false,
+      "change_type": "UPDATE",
+      "tx_id": 1406389,
+      "lsn": "D8/68018B38",
+      "primary_keys": ["id"]
+    },
+    "payload": {
+      "id": 18268,
+      "created_at": "2025-11-11T16:45:16.810513Z",
+      "updated_at": "2025-11-11T16:52:57.936475Z",
+      "pipeline_schedule_id": 240,
+      "pipeline_uuid": "pipesv2_wrangling",
+      "execution_date": "2025-11-11T16:45:17.027225Z",
+      "status": "COMPLETED",
+      "completed_at": "2025-11-11T16:52:59.071459Z",
+      "variables": {
+        "pre_processing_filters": [
+          {
+            "version": "486c2228d70863e6c9dceeb4ee3e37e9037b14ab",
+            "function_path": "workflows_v2.filters.athena.filter_capitation",
+            "description": "Pre-filter for Athena - capitation providers",
+            "reason": "NOT_APPLICABLE_PROVIDER",
+            "kwargs": {}
+          },
+          {
+            "version": "486c2228d70863e6c9dceeb4ee3e37e9037b14ab",
+            "function_path": "workflows_v2.filters.athena.filter_not_third_party",
+            "description": "Pre-filter for Athena - not third party network",
+            "reason": "NOT_APPLICABLE_PROVIDER",
+            "kwargs": {}
+          },
+          {
+            "version": "486c2228d70863e6c9dceeb4ee3e37e9037b14ab",
+            "function_path": "workflows_v2.filters.athena.filter_not_conta_normal",
+            "description": "Pre-filter for Athena - not conta normal",
+            "reason": "OTHER",
+            "kwargs": {}
+          }
+        ],
+        "refined_unprocessable_claims_output_table": "tmp_athena.unprocessable_claims_athena_20251111_163000",
+        "refined_processable_claims_output_table": "tmp_athena.processable_claims_athena_20251111_163000",
+        "refined_unprocessable_claims_historical_table": "refined_athena.unprocessable_claims_athena",
+        "refined_processable_claims_historical_table": "refined_athena.processable_claims_athena",
+        "data_quality": {
+          "version": "486c2228d70863e6c9dceeb4ee3e37e9037b14ab",
+          "function_path": "workflows_v2.data_quality.skip_function",
+          "kwargs": {}
+        },
+        "partner": "athena",
+        "execution_date": "2025-11-11T16:30:00+00:00",
+        "gcs_input_csv": {
+          "bucket_name": "pipes_v2",
+          "path": "claims_current_athena_20251111_163000.csv"
+        },
+        "run_id": "athena_20251111_163000",
+        "gcs_lock_file": {
+          "bucket_name": "pipes_v2",
+          "path": "prepare_raw_claims/athena.lock",
+          "disabled": false
+        },
+        "anonymization": {
+          "version": "486c2228d70863e6c9dceeb4ee3e37e9037b14ab",
+          "function_path": "workflows_v2.anonymization.skip_function",
+          "kwargs": {}
+        },
+        "data_wrangling": {
+          "version": "486c2228d70863e6c9dceeb4ee3e37e9037b14ab",
+          "function_path": "workflows_v2.data_wrangling.athena.wrangle",
+          "kwargs": {}
+        },
+        "data_wrangling_validation": {
+          "version": "486c2228d70863e6c9dceeb4ee3e37e9037b14ab",
+          "function_path": "workflows_v2.data_wrangling_validation.dummy_function",
+          "kwargs": {}
+        },
+        "execution_partition": "240/20251111T164517_027225"
+      },
+      "passed_sla": false,
+      "event_variables": null,
+      "metrics": null,
+      "backfill_id": null,
+      "executor_type": "LOCAL_PYTHON",
+      "started_at": "2025-11-11T16:45:18.031601Z"
+    }
+  }
+}
+
