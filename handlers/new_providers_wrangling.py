@@ -17,7 +17,7 @@ class NewProvidersWranglingHandler(NewProvidersBaseHandler):
     When the pipesv2_wrangling pipeline completes, this handler queries BigQuery
     to identify providers in the batch that are not present in the historical
     data (3-month rolling window), then emits metrics representing the percentage
-    of new providers per category. This enables monitoring of new provider
+    of new providers. This enables monitoring of new provider
     introduction during the wrangling pipeline execution.
     """
 
@@ -69,7 +69,7 @@ class NewProvidersWranglingHandler(NewProvidersBaseHandler):
 
         Queries BigQuery to identify providers in the batch that are not present
         in the historical data (3-month rolling window), then emits metrics
-        representing the percentage of new providers per category.
+        representing the percentage of new providers.
 
         Args:
             decoded_message: The decoded message dictionary containing pipeline completion data

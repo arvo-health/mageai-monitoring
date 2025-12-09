@@ -59,7 +59,7 @@ class NewProvidersBaseHandler(Handler):
 
         Queries BigQuery to identify providers in the batch that are not present
         in the historical data (3-month rolling window), then emits metrics
-        representing the percentage of new providers per category.
+        representing the percentage of new providers.
 
         Args:
             decoded_message: The decoded message dictionary containing pipeline completion data
@@ -135,7 +135,7 @@ class NewProvidersBaseHandler(Handler):
             "approved": approved_value,
         }
 
-        # Query to calculate new providers percentage per category
+        # Query to calculate new providers percentage
         # This query is compatible with both BigQuery and BigQuery emulator (SQLite)
         # Excludes batch items from historical lookup to avoid counting them as existing
         new_providers_query = f"""
@@ -152,44 +152,34 @@ class NewProvidersBaseHandler(Handler):
             )
         ),
         batch_providers AS (
-            SELECT DISTINCT
-                id_prestador,
-                categoria
+            SELECT DISTINCT id_prestador
             FROM (
-                SELECT id_prestador, categoria
+                SELECT id_prestador
                 FROM `{full_batch_processable_table}`
-                WHERE id_prestador IS NOT NULL AND categoria IS NOT NULL
+                WHERE id_prestador IS NOT NULL
                 UNION ALL
-                SELECT id_prestador, categoria
+                SELECT id_prestador
                 FROM `{full_batch_unprocessable_table}`
-                WHERE id_prestador IS NOT NULL AND categoria IS NOT NULL
+                WHERE id_prestador IS NOT NULL
             )
         ),
         historical_providers AS (
-            SELECT DISTINCT
-                id_prestador,
-                categoria
+            SELECT DISTINCT id_prestador
             FROM (
-                SELECT
-                    id_prestador,
-                    categoria
+                SELECT id_prestador
                 FROM `{full_historical_processable_table}` h1
                 WHERE created_at >= '{three_months_ago_date}'
                     AND id_prestador IS NOT NULL
-                    AND categoria IS NOT NULL
                     AND NOT EXISTS (
                         SELECT 1
                         FROM batch_id_arvo b
                         WHERE b.id_arvo = h1.id_arvo
                     )
                 UNION ALL
-                SELECT
-                    id_prestador,
-                    categoria
+                SELECT id_prestador
                 FROM `{full_historical_unprocessable_table}` h1
                 WHERE created_at >= '{three_months_ago_date}'
                     AND id_prestador IS NOT NULL
-                    AND categoria IS NOT NULL
                     AND NOT EXISTS (
                         SELECT 1
                         FROM batch_id_arvo b
@@ -197,36 +187,23 @@ class NewProvidersBaseHandler(Handler):
                     )
             )
         ),
-        batch_counts AS (
+        provider_counts AS (
             SELECT
-                categoria,
-                COUNT(DISTINCT id_prestador) AS total_providers
-            FROM batch_providers
-            GROUP BY categoria
-        ),
-        new_providers_counts AS (
-            SELECT
-                bp.categoria,
-                COUNT(DISTINCT bp.id_prestador) AS new_providers
+                COUNT(DISTINCT bp.id_prestador) AS total_providers,
+                COUNT(DISTINCT CASE WHEN hp.id_prestador IS NULL THEN bp.id_prestador END) AS new_providers
             FROM batch_providers bp
             LEFT JOIN historical_providers hp
                 ON bp.id_prestador = hp.id_prestador
-                AND bp.categoria = hp.categoria
-            WHERE hp.id_prestador IS NULL
-            GROUP BY bp.categoria
         )
         SELECT
-            bc.categoria,
-            bc.total_providers,
-            COALESCE(npc.new_providers, 0) AS new_providers,
+            total_providers,
+            COALESCE(new_providers, 0) AS new_providers,
             CASE
-                WHEN bc.total_providers > 0 THEN
-                    CAST(COALESCE(npc.new_providers, 0) AS FLOAT64) / bc.total_providers
+                WHEN total_providers > 0 THEN
+                    CAST(COALESCE(new_providers, 0) AS FLOAT64) / total_providers
                 ELSE 0.0
             END AS new_pct
-        FROM batch_counts bc
-        LEFT JOIN new_providers_counts npc
-            ON bc.categoria = npc.categoria
+        FROM provider_counts
         """
 
         try:
@@ -247,11 +224,7 @@ class NewProvidersBaseHandler(Handler):
                 query_job = self.bq_client.query(new_providers_query)
                 result = query_job.result()
                 for row in result:
-                    categoria = str(row.categoria)
                     new_pct = float(row.new_pct or 0.0)
-
-                    # Build labels with category
-                    labels = {**base_labels, "category": categoria}
 
                     # Emit metric
                     emit_gauge_metric(
@@ -259,41 +232,20 @@ class NewProvidersBaseHandler(Handler):
                         project_id=self.run_project_id,
                         name="claims/providers/new_pct_3mo",
                         value=new_pct,
-                        labels=labels,
+                        labels=base_labels,
                         timestamp=source_timestamp,
                     )
             else:
                 # If historical tables don't exist, assume all providers are new (100%)
-                # Query only batch tables to get categories
-                batch_categories_query = f"""
-                SELECT DISTINCT categoria
-                FROM (
-                    SELECT categoria
-                    FROM `{full_batch_processable_table}`
-                    WHERE categoria IS NOT NULL
-                    UNION ALL
-                    SELECT categoria
-                    FROM `{full_batch_unprocessable_table}`
-                    WHERE categoria IS NOT NULL
+                # Emit metric with 100% new providers
+                emit_gauge_metric(
+                    monitoring_client=self.monitoring_client,
+                    project_id=self.run_project_id,
+                    name="claims/providers/new_pct_3mo",
+                    value=1.0,
+                    labels=base_labels,
+                    timestamp=source_timestamp,
                 )
-                """
-                query_job = self.bq_client.query(batch_categories_query)
-                result = query_job.result()
-                for row in result:
-                    categoria = str(row.categoria)
-
-                    # Build labels with category
-                    labels = {**base_labels, "category": categoria}
-
-                    # Emit metric with 100% new providers
-                    emit_gauge_metric(
-                        monitoring_client=self.monitoring_client,
-                        project_id=self.run_project_id,
-                        name="claims/providers/new_pct_3mo",
-                        value=1.0,
-                        labels=labels,
-                        timestamp=source_timestamp,
-                    )
 
         except NotFound:
             # If batch tables don't exist, raise error
