@@ -67,12 +67,11 @@ def _create_expected_metric_calls(
     mocker: MockerFixture,
     partner: str,
     approved: str,
-    category: str,
     value: float,
 ) -> list:
     """Create expected metric call matchers."""
     expected_project = "projects/arvo-eng-prd"
-    expected_labels = {"partner": partner, "approved": approved, "category": category}
+    expected_labels = {"partner": partner, "approved": approved}
 
     return [
         mocker.call(
@@ -99,7 +98,7 @@ def test_new_providers_base_handler_with_approval_pipeline(
     This test:
     1. Creates BigQuery tables with test provider data
     2. Triggers the handler with a pipesv2_approval completion event
-    3. Verifies metrics are emitted correctly per category
+    3. Verifies metrics are emitted correctly
     """
     dataset_id = "test_dataset"
     batch_processable_table_id = "batch_processable"
@@ -217,18 +216,12 @@ def test_new_providers_base_handler_with_approval_pipeline(
         )
 
         # Expected results:
-        # hospital category: batch has provider1, provider2 (2 unique)
-        #   historical has provider1, provider2 (2 unique) - but id_arvo values differ
-        #   so they're not excluded, and providers match
-        #   new providers: 0, total: 2, percentage: 0.0
-        # clinic category: batch has provider3, provider4 (2 unique)
-        #   historical has provider3 (1 unique, provider5 is outside window)
-        #   new providers: provider4 (1), total: 2, percentage: 0.5
+        # Batch has provider1, provider2, provider3, provider4 (4 unique)
+        # Historical has provider1, provider2, provider3 (3 unique, provider5 is outside window)
+        # New providers: provider4 (1), total: 4, percentage: 0.25
 
         expected_calls = _create_expected_metric_calls(
-            mocker, partner="porto", approved="true", category="hospital", value=0.0
-        ) + _create_expected_metric_calls(
-            mocker, partner="porto", approved="true", category="clinic", value=0.5
+            mocker, partner="porto", approved="true", value=0.25
         )
 
         response = dispatch_event(event, [NewProvidersApprovalHandler])
@@ -253,7 +246,7 @@ def test_new_providers_base_handler_with_wrangling_pipeline(
     This test:
     1. Creates BigQuery tables with test provider data
     2. Triggers the handler with a pipesv2_wrangling completion event
-    3. Verifies metrics are emitted correctly per category
+    3. Verifies metrics are emitted correctly
     """
     dataset_id = "test_dataset"
     batch_processable_table_id = "batch_processable"
@@ -321,12 +314,12 @@ def test_new_providers_base_handler_with_wrangling_pipeline(
         )
 
         # Expected results:
-        # hospital category: batch has provider1, provider2 (2 unique)
-        #   historical has 0 providers
-        #   new providers: provider1, provider2 (2), total: 2, percentage: 1.0
+        # Batch has provider1, provider2 (2 unique)
+        # Historical has 0 providers
+        # New providers: provider1, provider2 (2), total: 2, percentage: 1.0
 
         expected_calls = _create_expected_metric_calls(
-            mocker, partner="abertta", approved="false", category="hospital", value=1.0
+            mocker, partner="abertta", approved="false", value=1.0
         )
 
         response = dispatch_event(event, [NewProvidersWranglingHandler])
@@ -404,12 +397,12 @@ def test_new_providers_base_handler_missing_historical_tables(
         )
 
         # Expected results:
-        # hospital category: batch has provider1, provider2 (2 unique)
-        #   historical tables don't exist, so assume 100% new
-        #   percentage: 1.0
+        # Batch has provider1, provider2 (2 unique)
+        # Historical tables don't exist, so assume 100% new
+        # percentage: 1.0
 
         expected_calls = _create_expected_metric_calls(
-            mocker, partner="cemig", approved="true", category="hospital", value=1.0
+            mocker, partner="cemig", approved="true", value=1.0
         )
 
         response = dispatch_event(event, [NewProvidersApprovalHandler])
@@ -521,12 +514,12 @@ def test_new_providers_base_handler_with_3month_window(
         )
 
         # Expected results:
-        # hospital category: batch has provider1, provider2 (2 unique)
-        #   historical within window has provider1 (1 unique, provider2 is outside window)
-        #   new providers: provider2 (1), total: 2, percentage: 0.5
+        # Batch has provider1, provider2 (2 unique)
+        # Historical within window has provider1 (1 unique, provider2 is outside window)
+        # New providers: provider2 (1), total: 2, percentage: 0.5
 
         expected_calls = _create_expected_metric_calls(
-            mocker, partner="athena", approved="true", category="hospital", value=0.5
+            mocker, partner="athena", approved="true", value=0.5
         )
 
         response = dispatch_event(event, [NewProvidersApprovalHandler])
@@ -627,13 +620,13 @@ def test_new_providers_base_handler_batch_exclusion_simple(
         )
 
         # Expected results:
-        # hospital category: batch has provider1 (1 unique) with id_arvo=arvo1
-        #   historical has items with id_arvo=arvo1, but these are excluded from lookup
-        #   because id_arvo=arvo1 exists in batch
-        #   new providers: provider1 (1), total: 1, percentage: 1.0
+        # Batch has provider1 (1 unique) with id_arvo=arvo1
+        # Historical has items with id_arvo=arvo1, but these are excluded from lookup
+        # because id_arvo=arvo1 exists in batch
+        # New providers: provider1 (1), total: 1, percentage: 1.0
 
         expected_calls = _create_expected_metric_calls(
-            mocker, partner="cemig", approved="true", category="hospital", value=1.0
+            mocker, partner="cemig", approved="true", value=1.0
         )
 
         response = dispatch_event(event, [NewProvidersApprovalHandler])
@@ -757,15 +750,15 @@ def test_new_providers_base_handler_excludes_batch_items_from_historical(
         )
 
         # Expected results:
-        # hospital category: batch has provider1 (id_arvo=arvo1), provider2 (id_arvo=arvo2)
-        #   historical lookup (after excluding id_arvo=arvo1) has:
-        #     - provider2 (id_arvo=arvo3) - matches batch provider2
-        #     - provider3 (id_arvo=arvo4) - doesn't match
-        #   new providers: provider1 (1) - provider2 exists in historical with different id_arvo
-        #   total: 2, percentage: 0.5
+        # Batch has provider1 (id_arvo=arvo1), provider2 (id_arvo=arvo2)
+        # Historical lookup (after excluding id_arvo=arvo1) has:
+        #   - provider2 (id_arvo=arvo3) - matches batch provider2
+        #   - provider3 (id_arvo=arvo4) - doesn't match
+        # New providers: provider1 (1) - provider2 exists in historical with different id_arvo
+        # Total: 2, percentage: 0.5
 
         expected_calls = _create_expected_metric_calls(
-            mocker, partner="test_partner", approved="true", category="hospital", value=0.5
+            mocker, partner="test_partner", approved="true", value=0.5
         )
 
         response = dispatch_event(event, [NewProvidersApprovalHandler])
