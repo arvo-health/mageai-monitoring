@@ -4,7 +4,8 @@ import pytest
 from cloudevents.http import CloudEvent
 from pytest_mock import MockerFixture
 
-import main
+from handlers.pre_filtered_approval import PreFilteredApprovalHandler
+from handlers.pre_filtered_wrangling import PreFilteredWranglingHandler
 from tests.bigquery import (
     create_claims_table_with_data,
     create_dataset,
@@ -135,6 +136,7 @@ def test_pre_filtered_base_handler_with_approval_pipeline(
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
+    dispatch_event,
 ):
     """Integration test for PreFilteredBaseHandler via approval pipeline.
 
@@ -177,7 +179,7 @@ def test_pre_filtered_base_handler_with_approval_pipeline(
             relative_value=RELATIVE_VALUE,
         )
 
-        response = main.handle_cloud_event(event)
+        response = dispatch_event(event, [PreFilteredApprovalHandler])
 
         assert_response_success(response)
         assert_metrics_emitted(mock_monitoring_client, expected_calls)
@@ -192,6 +194,7 @@ def test_pre_filtered_base_handler_missing_unprocessable_table(
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
+    dispatch_event,
 ):
     """Integration test for PreFilteredBaseHandler when unprocessable table doesn't exist.
 
@@ -235,7 +238,7 @@ def test_pre_filtered_base_handler_missing_unprocessable_table(
             relative_value=0.0,  # 0 / (0 + 4000) = 0
         )
 
-        response = main.handle_cloud_event(event)
+        response = dispatch_event(event, [PreFilteredApprovalHandler])
 
         assert_response_success(response)
         assert_metrics_emitted(mock_monitoring_client, expected_calls)
@@ -250,6 +253,7 @@ def test_pre_filtered_base_handler_missing_processable_table(
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
+    dispatch_event,
 ):
     """Integration test for PreFilteredBaseHandler when processable table doesn't exist.
 
@@ -291,7 +295,7 @@ def test_pre_filtered_base_handler_missing_processable_table(
             relative_value=None,  # Processable table doesn't exist, so skip relative metric
         )
 
-        response = main.handle_cloud_event(event)
+        response = dispatch_event(event, [PreFilteredApprovalHandler])
 
         assert_response_success(response)
         assert_metrics_emitted(mock_monitoring_client, expected_calls)
@@ -306,6 +310,7 @@ def test_pre_filtered_base_handler_with_wrangling_pipeline(
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
+    dispatch_event,
 ):
     """Integration test for PreFilteredBaseHandler via wrangling pipeline.
 
@@ -347,7 +352,7 @@ def test_pre_filtered_base_handler_with_wrangling_pipeline(
             relative_value=RELATIVE_VALUE,
         )
 
-        response = main.handle_cloud_event(event)
+        response = dispatch_event(event, [PreFilteredWranglingHandler])
 
         assert_response_success(response)
         assert_metrics_emitted(mock_monitoring_client, expected_calls)
