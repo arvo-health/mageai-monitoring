@@ -17,7 +17,7 @@ class NewBeneficiariesWranglingHandler(NewBeneficiariesBaseHandler):
     When the pipesv2_wrangling pipeline completes, this handler queries BigQuery
     to identify beneficiaries in the batch that are not present in the historical
     data (3-month rolling window), then emits metrics representing the percentage
-    of new beneficiaries per category. This enables monitoring of new beneficiary
+    of new beneficiaries. This enables monitoring of new beneficiary
     introduction during the wrangling pipeline execution.
     """
 
@@ -69,7 +69,7 @@ class NewBeneficiariesWranglingHandler(NewBeneficiariesBaseHandler):
 
         Queries BigQuery to identify beneficiaries in the batch that are not present
         in the historical data (3-month rolling window), then emits metrics
-        representing the percentage of new beneficiaries per category.
+        representing the percentage of new beneficiaries.
 
         Args:
             decoded_message: The decoded message dictionary containing pipeline completion data

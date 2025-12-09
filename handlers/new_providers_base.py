@@ -189,9 +189,9 @@ class NewProvidersBaseHandler(Handler):
         provider_counts AS (
             SELECT
                 COUNT(DISTINCT bp.id_prestador) AS total_providers,
-                COUNT(
-                    DISTINCT CASE WHEN hp.id_prestador IS NULL THEN bp.id_prestador END
-                ) AS new_providers
+                COUNT(DISTINCT CASE
+                    WHEN hp.id_prestador IS NULL THEN bp.id_prestador
+                END) AS new_providers
             FROM batch_providers bp
             LEFT JOIN historical_providers hp
                 ON bp.id_prestador = hp.id_prestador

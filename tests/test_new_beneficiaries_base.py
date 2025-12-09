@@ -67,12 +67,11 @@ def _create_expected_metric_calls(
     mocker: MockerFixture,
     partner: str,
     approved: str,
-    category: str,
     value: float,
 ) -> list:
     """Create expected metric call matchers."""
     expected_project = "projects/arvo-eng-prd"
-    expected_labels = {"partner": partner, "approved": approved, "category": category}
+    expected_labels = {"partner": partner, "approved": approved}
 
     return [
         mocker.call(
@@ -99,7 +98,7 @@ def test_new_beneficiaries_base_handler_with_approval_pipeline(
     This test:
     1. Creates BigQuery tables with test beneficiary data
     2. Triggers the handler with a pipesv2_approval completion event
-    3. Verifies metrics are emitted correctly per category
+    3. Verifies metrics are emitted correctly
     """
     dataset_id = "test_dataset"
     batch_processable_table_id = "batch_processable"
@@ -218,18 +217,13 @@ def test_new_beneficiaries_base_handler_with_approval_pipeline(
         )
 
         # Expected results:
-        # hospital category: batch has beneficiary1, beneficiary2 (2 unique)
-        #   historical has beneficiary1, beneficiary2 (2 unique) - but id_arvo values differ
-        #   so they're not excluded, and beneficiaries match
-        #   new beneficiaries: 0, total: 2, percentage: 0.0
-        # clinic category: batch has beneficiary3, beneficiary4 (2 unique)
-        #   historical has beneficiary3 (1 unique, beneficiary5 is outside window)
-        #   new beneficiaries: beneficiary4 (1), total: 2, percentage: 0.5
+        # Batch has beneficiary1, beneficiary2, beneficiary3, beneficiary4 (4 unique)
+        # Historical has beneficiary1, beneficiary2, beneficiary3 (3 unique,
+        # beneficiary5 is outside window)
+        # New beneficiaries: beneficiary4 (1), total: 4, percentage: 0.25
 
         expected_calls = _create_expected_metric_calls(
-            mocker, partner="porto", approved="true", category="hospital", value=0.0
-        ) + _create_expected_metric_calls(
-            mocker, partner="porto", approved="true", category="clinic", value=0.5
+            mocker, partner="porto", approved="true", value=0.25
         )
 
         response = dispatch_event(event, [NewBeneficiariesApprovalHandler])
@@ -254,7 +248,7 @@ def test_new_beneficiaries_base_handler_with_wrangling_pipeline(
     This test:
     1. Creates BigQuery tables with test beneficiary data
     2. Triggers the handler with a pipesv2_wrangling completion event
-    3. Verifies metrics are emitted correctly per category
+    3. Verifies metrics are emitted correctly
     """
     dataset_id = "test_dataset"
     batch_processable_table_id = "batch_processable"
@@ -322,12 +316,12 @@ def test_new_beneficiaries_base_handler_with_wrangling_pipeline(
         )
 
         # Expected results:
-        # hospital category: batch has beneficiary1, beneficiary2 (2 unique)
-        #   historical has 0 beneficiaries
-        #   new beneficiaries: beneficiary1, beneficiary2 (2), total: 2, percentage: 1.0
+        # Batch has beneficiary1, beneficiary2 (2 unique)
+        # Historical has 0 beneficiaries
+        # New beneficiaries: beneficiary1, beneficiary2 (2), total: 2, percentage: 1.0
 
         expected_calls = _create_expected_metric_calls(
-            mocker, partner="abertta", approved="false", category="hospital", value=1.0
+            mocker, partner="abertta", approved="false", value=1.0
         )
 
         response = dispatch_event(event, [NewBeneficiariesWranglingHandler])
@@ -405,12 +399,12 @@ def test_new_beneficiaries_base_handler_missing_historical_tables(
         )
 
         # Expected results:
-        # hospital category: batch has beneficiary1, beneficiary2 (2 unique)
-        #   historical tables don't exist, so assume 100% new
-        #   percentage: 1.0
+        # Batch has beneficiary1, beneficiary2 (2 unique)
+        # Historical tables don't exist, so assume 100% new
+        # percentage: 1.0
 
         expected_calls = _create_expected_metric_calls(
-            mocker, partner="cemig", approved="true", category="hospital", value=1.0
+            mocker, partner="cemig", approved="true", value=1.0
         )
 
         response = dispatch_event(event, [NewBeneficiariesApprovalHandler])
@@ -522,12 +516,12 @@ def test_new_beneficiaries_base_handler_with_3month_window(
         )
 
         # Expected results:
-        # hospital category: batch has beneficiary1, beneficiary2 (2 unique)
-        #   historical within window has beneficiary1 (1 unique, beneficiary2 is outside window)
-        #   new beneficiaries: beneficiary2 (1), total: 2, percentage: 0.5
+        # Batch has beneficiary1, beneficiary2 (2 unique)
+        # Historical within window has beneficiary1 (1 unique, beneficiary2 is outside window)
+        # New beneficiaries: beneficiary2 (1), total: 2, percentage: 0.5
 
         expected_calls = _create_expected_metric_calls(
-            mocker, partner="athena", approved="true", category="hospital", value=0.5
+            mocker, partner="athena", approved="true", value=0.5
         )
 
         response = dispatch_event(event, [NewBeneficiariesApprovalHandler])
@@ -628,13 +622,13 @@ def test_new_beneficiaries_base_handler_batch_exclusion_simple(
         )
 
         # Expected results:
-        # hospital category: batch has beneficiary1 (1 unique) with id_arvo=arvo1
-        #   historical has items with id_arvo=arvo1, but these are excluded from lookup
-        #   because id_arvo=arvo1 exists in batch
-        #   new beneficiaries: beneficiary1 (1), total: 1, percentage: 1.0
+        # Batch has beneficiary1 (1 unique) with id_arvo=arvo1
+        # Historical has items with id_arvo=arvo1, but these are excluded from lookup
+        # because id_arvo=arvo1 exists in batch
+        # New beneficiaries: beneficiary1 (1), total: 1, percentage: 1.0
 
         expected_calls = _create_expected_metric_calls(
-            mocker, partner="cemig", approved="true", category="hospital", value=1.0
+            mocker, partner="cemig", approved="true", value=1.0
         )
 
         response = dispatch_event(event, [NewBeneficiariesApprovalHandler])
@@ -760,16 +754,16 @@ def test_new_beneficiaries_base_handler_excludes_batch_items_from_historical(
         )
 
         # Expected results:
-        # hospital category: batch has beneficiary1 (id_arvo=arvo1), beneficiary2 (id_arvo=arvo2)
-        #   historical lookup (after excluding id_arvo=arvo1) has:
-        #     - beneficiary2 (id_arvo=arvo3) - matches batch beneficiary2
-        #     - beneficiary3 (id_arvo=arvo4) - doesn't match
-        #   new beneficiaries: beneficiary1 (1) - beneficiary2 exists in historical
-        #   with different id_arvo
-        #   total: 2, percentage: 0.5
+        # Batch has beneficiary1 (id_arvo=arvo1), beneficiary2 (id_arvo=arvo2)
+        # Historical lookup (after excluding id_arvo=arvo1) has:
+        #   - beneficiary2 (id_arvo=arvo3) - matches batch beneficiary2
+        #   - beneficiary3 (id_arvo=arvo4) - doesn't match
+        # New beneficiaries: beneficiary1 (1) - beneficiary2 exists in historical
+        # with different id_arvo
+        # Total: 2, percentage: 0.5
 
         expected_calls = _create_expected_metric_calls(
-            mocker, partner="test_partner", approved="true", category="hospital", value=0.5
+            mocker, partner="test_partner", approved="true", value=0.5
         )
 
         response = dispatch_event(event, [NewBeneficiariesApprovalHandler])

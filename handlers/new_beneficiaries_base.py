@@ -59,7 +59,7 @@ class NewBeneficiariesBaseHandler(Handler):
 
         Queries BigQuery to identify beneficiaries in the batch that are not present
         in the historical data (3-month rolling window), then emits metrics
-        representing the percentage of new beneficiaries per category.
+        representing the percentage of new beneficiaries.
 
         Args:
             decoded_message: The decoded message dictionary containing pipeline completion data
@@ -135,7 +135,7 @@ class NewBeneficiariesBaseHandler(Handler):
             "approved": approved_value,
         }
 
-        # Query to calculate new beneficiaries percentage per category
+        # Query to calculate new beneficiaries percentage
         # This query is compatible with both BigQuery and BigQuery emulator (SQLite)
         # Excludes batch items from historical lookup to avoid counting them as existing
         new_beneficiaries_query = f"""
@@ -152,44 +152,34 @@ class NewBeneficiariesBaseHandler(Handler):
             )
         ),
         batch_beneficiaries AS (
-            SELECT DISTINCT
-                id_matricula,
-                categoria
+            SELECT DISTINCT id_matricula
             FROM (
-                SELECT id_matricula, categoria
+                SELECT id_matricula
                 FROM `{full_batch_processable_table}`
-                WHERE id_matricula IS NOT NULL AND categoria IS NOT NULL
+                WHERE id_matricula IS NOT NULL
                 UNION ALL
-                SELECT id_matricula, categoria
+                SELECT id_matricula
                 FROM `{full_batch_unprocessable_table}`
-                WHERE id_matricula IS NOT NULL AND categoria IS NOT NULL
+                WHERE id_matricula IS NOT NULL
             )
         ),
         historical_beneficiaries AS (
-            SELECT DISTINCT
-                id_matricula,
-                categoria
+            SELECT DISTINCT id_matricula
             FROM (
-                SELECT
-                    id_matricula,
-                    categoria
+                SELECT id_matricula
                 FROM `{full_historical_processable_table}` h1
                 WHERE created_at >= '{three_months_ago_date}'
                     AND id_matricula IS NOT NULL
-                    AND categoria IS NOT NULL
                     AND NOT EXISTS (
                         SELECT 1
                         FROM batch_id_arvo b
                         WHERE b.id_arvo = h1.id_arvo
                     )
                 UNION ALL
-                SELECT
-                    id_matricula,
-                    categoria
+                SELECT id_matricula
                 FROM `{full_historical_unprocessable_table}` h1
                 WHERE created_at >= '{three_months_ago_date}'
                     AND id_matricula IS NOT NULL
-                    AND categoria IS NOT NULL
                     AND NOT EXISTS (
                         SELECT 1
                         FROM batch_id_arvo b
@@ -197,36 +187,25 @@ class NewBeneficiariesBaseHandler(Handler):
                     )
             )
         ),
-        batch_counts AS (
+        beneficiary_counts AS (
             SELECT
-                categoria,
-                COUNT(DISTINCT id_matricula) AS total_beneficiaries
-            FROM batch_beneficiaries
-            GROUP BY categoria
-        ),
-        new_beneficiaries_counts AS (
-            SELECT
-                bb.categoria,
-                COUNT(DISTINCT bb.id_matricula) AS new_beneficiaries
+                COUNT(DISTINCT bb.id_matricula) AS total_beneficiaries,
+                COUNT(DISTINCT CASE
+                    WHEN hb.id_matricula IS NULL THEN bb.id_matricula
+                END) AS new_beneficiaries
             FROM batch_beneficiaries bb
             LEFT JOIN historical_beneficiaries hb
                 ON bb.id_matricula = hb.id_matricula
-                AND bb.categoria = hb.categoria
-            WHERE hb.id_matricula IS NULL
-            GROUP BY bb.categoria
         )
         SELECT
-            bc.categoria,
-            bc.total_beneficiaries,
-            COALESCE(nbc.new_beneficiaries, 0) AS new_beneficiaries,
+            total_beneficiaries,
+            COALESCE(new_beneficiaries, 0) AS new_beneficiaries,
             CASE
-                WHEN bc.total_beneficiaries > 0 THEN
-                    CAST(COALESCE(nbc.new_beneficiaries, 0) AS FLOAT64) / bc.total_beneficiaries
+                WHEN total_beneficiaries > 0 THEN
+                    CAST(COALESCE(new_beneficiaries, 0) AS FLOAT64) / total_beneficiaries
                 ELSE 0.0
             END AS new_pct
-        FROM batch_counts bc
-        LEFT JOIN new_beneficiaries_counts nbc
-            ON bc.categoria = nbc.categoria
+        FROM beneficiary_counts
         """
 
         try:
@@ -247,11 +226,7 @@ class NewBeneficiariesBaseHandler(Handler):
                 query_job = self.bq_client.query(new_beneficiaries_query)
                 result = query_job.result()
                 for row in result:
-                    categoria = str(row.categoria)
                     new_pct = float(row.new_pct or 0.0)
-
-                    # Build labels with category
-                    labels = {**base_labels, "category": categoria}
 
                     # Emit metric
                     emit_gauge_metric(
@@ -259,41 +234,20 @@ class NewBeneficiariesBaseHandler(Handler):
                         project_id=self.run_project_id,
                         name="claims/beneficiaries/new_pct_3mo",
                         value=new_pct,
-                        labels=labels,
+                        labels=base_labels,
                         timestamp=source_timestamp,
                     )
             else:
                 # If historical tables don't exist, assume all beneficiaries are new (100%)
-                # Query only batch tables to get categories
-                batch_categories_query = f"""
-                SELECT DISTINCT categoria
-                FROM (
-                    SELECT categoria
-                    FROM `{full_batch_processable_table}`
-                    WHERE categoria IS NOT NULL
-                    UNION ALL
-                    SELECT categoria
-                    FROM `{full_batch_unprocessable_table}`
-                    WHERE categoria IS NOT NULL
+                # Emit metric with 100% new beneficiaries
+                emit_gauge_metric(
+                    monitoring_client=self.monitoring_client,
+                    project_id=self.run_project_id,
+                    name="claims/beneficiaries/new_pct_3mo",
+                    value=1.0,
+                    labels=base_labels,
+                    timestamp=source_timestamp,
                 )
-                """
-                query_job = self.bq_client.query(batch_categories_query)
-                result = query_job.result()
-                for row in result:
-                    categoria = str(row.categoria)
-
-                    # Build labels with category
-                    labels = {**base_labels, "category": categoria}
-
-                    # Emit metric with 100% new beneficiaries
-                    emit_gauge_metric(
-                        monitoring_client=self.monitoring_client,
-                        project_id=self.run_project_id,
-                        name="claims/beneficiaries/new_pct_3mo",
-                        value=1.0,
-                        labels=labels,
-                        timestamp=source_timestamp,
-                    )
 
         except NotFound:
             # If batch tables don't exist, raise error
