@@ -8,6 +8,7 @@ that track the total value of savings per agent.
 
 from datetime import datetime
 
+from google.api_core.exceptions import NotFound
 from google.cloud import bigquery, monitoring_v3
 
 from handlers.base import Handler, HandlerBadRequestError
@@ -71,7 +72,7 @@ class SavingsApprovalHandler(Handler):
 
         Queries BigQuery to aggregate the total value of savings grouped by agent_id,
         then emits one metric point per agent_id. Each metric has labels for partner,
-        agent_id, and source.
+        agent_id, and source. If the table doesn't exist, no metrics are emitted.
 
         Args:
             decoded_message: The decoded message dictionary containing pipeline completion data
@@ -80,7 +81,6 @@ class SavingsApprovalHandler(Handler):
             HandlerBadRequestError: If the required input table variable
                 (selected_savings_input_table) or partner variable are not present
                 in the event, or if the payload is missing
-            NotFound: If the selected_savings_input_table doesn't exist
         """
         payload = decoded_message.get("payload")
 
@@ -115,36 +115,44 @@ class SavingsApprovalHandler(Handler):
             else f"{self.data_project_id}.{selected_savings_table}"
         )
 
-        # Query BigQuery to get sum of vl_glosa_arvo grouped by agent_id
-        savings_query = f"""
-        SELECT agent_id, COALESCE(SUM(vl_glosa_arvo), 0) AS total_vl_glosa_arvo
-        FROM `{full_table}`
-        GROUP BY agent_id
-        """
-        query_job = self.bq_client.query(savings_query)
-        result = query_job.result()
-
         # Parse timestamp
         source_timestamp = datetime.fromisoformat(
             decoded_message["source_timestamp"].replace("Z", "+00:00")
         )
 
-        # Emit one metric point per agent_id
-        for row in result:
-            agent_id = row.agent_id
-            total_vl_glosa_arvo = float(row.total_vl_glosa_arvo or 0.0)
+        # Query BigQuery to get sum of vl_glosa_arvo grouped by agent_id
+        # If table doesn't exist, don't emit any metrics
+        try:
+            # Check if table exists first to avoid hanging on query
+            self.bq_client.get_table(full_table)
+            # Table exists, so query it
+            savings_query = f"""
+            SELECT agent_id, COALESCE(SUM(vl_glosa_arvo), 0) AS total_vl_glosa_arvo
+            FROM `{full_table}`
+            GROUP BY agent_id
+            """
+            query_job = self.bq_client.query(savings_query)
+            result = query_job.result()
 
-            labels = {
-                "partner": str(partner_value),
-                "agent_id": str(agent_id),
-                "source": "selected_savings",
-            }
+            # Emit one metric point per agent_id
+            for row in result:
+                agent_id = row.agent_id
+                total_vl_glosa_arvo = float(row.total_vl_glosa_arvo or 0.0)
 
-            emit_gauge_metric(
-                monitoring_client=self.monitoring_client,
-                project_id=self.run_project_id,
-                name="claims/glosa/approved/vl_glosa_arvo",
-                value=total_vl_glosa_arvo,
-                labels=labels,
-                timestamp=source_timestamp,
-            )
+                labels = {
+                    "partner": str(partner_value),
+                    "agent_id": str(agent_id),
+                    "source": "selected_savings",
+                }
+
+                emit_gauge_metric(
+                    monitoring_client=self.monitoring_client,
+                    project_id=self.run_project_id,
+                    name="claims/glosa/approved/vl_glosa_arvo",
+                    value=total_vl_glosa_arvo,
+                    labels=labels,
+                    timestamp=source_timestamp,
+                )
+        except NotFound:
+            # If table doesn't exist, don't emit any metrics
+            return

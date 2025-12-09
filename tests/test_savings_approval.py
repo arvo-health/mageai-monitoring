@@ -314,3 +314,41 @@ def test_savings_approval_handler_empty_table(
 
     finally:
         bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
+
+
+@pytest.mark.integration
+def test_savings_approval_handler_table_not_found(
+    bigquery_client,
+    mock_monitoring_client,
+    flask_app,
+    mocker: MockerFixture,
+    dispatch_event,
+):
+    """Integration test for SavingsApprovalHandler when table doesn't exist.
+
+    This test:
+    1. Creates a dataset but no table
+    2. Triggers the handler with a pipesv2_approval completion event
+    3. Verifies no metrics are emitted
+    """
+    dataset_id = "test_dataset"
+    selected_savings_table_id = "nonexistent_table"
+
+    create_dataset(bigquery_client, dataset_id)
+
+    try:
+        event = _create_cloud_event(
+            bigquery_client=bigquery_client,
+            dataset_id=dataset_id,
+            partner="porto",
+            selected_savings_table_id=selected_savings_table_id,
+        )
+
+        response = dispatch_event(event, [SavingsApprovalHandler])
+
+        assert_response_success(response)
+        # Verify no metrics were emitted
+        assert mock_monitoring_client.create_time_series.call_count == 0
+
+    finally:
+        bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
