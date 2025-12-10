@@ -1,7 +1,7 @@
-"""Base handler for new providers handlers.
+"""Base handler for new beneficiaries handlers.
 
 This module contains the base class for handlers that calculate and emit
-new providers metrics from pipeline completion events.
+new beneficiaries metrics from pipeline completion events.
 """
 
 from datetime import datetime, timedelta
@@ -13,14 +13,14 @@ from handlers.base import Handler, HandlerBadRequestError
 from metrics import emit_gauge_metric
 
 
-class NewProvidersBaseHandler(Handler):
+class NewBeneficiariesBaseHandler(Handler):
     """
-    Base handler for calculating and emitting new providers metrics.
+    Base handler for calculating and emitting new beneficiaries metrics.
 
     This base class provides common functionality for handlers that process
-    pipeline completion events to compute metrics about new providers (providers
+    pipeline completion events to compute metrics about new beneficiaries (beneficiaries
     not present in a 3-month rolling history). Subclasses should implement
-    the `match` method and call `_handle_new_providers_metrics` with
+    the `match` method and call `_handle_new_beneficiaries_metrics` with
     pipeline-specific configuration.
     """
 
@@ -45,7 +45,7 @@ class NewProvidersBaseHandler(Handler):
         self.run_project_id = run_project_id
         self.data_project_id = data_project_id
 
-    def _handle_new_providers_metrics(
+    def _handle_new_beneficiaries_metrics(
         self,
         decoded_message: dict,
         batch_processable_table_var: str,
@@ -55,14 +55,15 @@ class NewProvidersBaseHandler(Handler):
         approved_value: str,
     ) -> None:
         """
-        Calculate new providers metrics and emit to Cloud Monitoring.
+        Calculate new beneficiaries metrics and emit to Cloud Monitoring.
 
-        Queries BigQuery to identify providers in the batch that are not present
+        Queries BigQuery to identify beneficiaries in the batch that are not present
         in the historical data (3-month rolling window), then emits metrics
-        representing the percentage of new providers.
+        representing the percentage of new beneficiaries.
 
         Args:
             decoded_message: The decoded message dictionary containing pipeline completion data
+            pipeline_uuid: The pipeline UUID to verify (for defensive check)
             batch_processable_table_var: Variable name for the batch processable claims table
             batch_unprocessable_table_var: Variable name for the batch unprocessable claims table
             historical_processable_table_var: Variable name for the historical processable
@@ -134,10 +135,10 @@ class NewProvidersBaseHandler(Handler):
             "approved": approved_value,
         }
 
-        # Query to calculate new providers percentage
+        # Query to calculate new beneficiaries percentage
         # This query is compatible with both BigQuery and BigQuery emulator (SQLite)
         # Excludes batch items from historical lookup to avoid counting them as existing
-        new_providers_query = f"""
+        new_beneficiaries_query = f"""
         WITH batch_id_arvo AS (
             SELECT DISTINCT id_arvo
             FROM (
@@ -150,35 +151,35 @@ class NewProvidersBaseHandler(Handler):
                 WHERE id_arvo IS NOT NULL
             )
         ),
-        batch_providers AS (
-            SELECT DISTINCT id_prestador
+        batch_beneficiaries AS (
+            SELECT DISTINCT id_matricula
             FROM (
-                SELECT id_prestador
+                SELECT id_matricula
                 FROM `{full_batch_processable_table}`
-                WHERE id_prestador IS NOT NULL
+                WHERE id_matricula IS NOT NULL
                 UNION ALL
-                SELECT id_prestador
+                SELECT id_matricula
                 FROM `{full_batch_unprocessable_table}`
-                WHERE id_prestador IS NOT NULL
+                WHERE id_matricula IS NOT NULL
             )
         ),
-        historical_providers AS (
-            SELECT DISTINCT id_prestador
+        historical_beneficiaries AS (
+            SELECT DISTINCT id_matricula
             FROM (
-                SELECT id_prestador
+                SELECT id_matricula
                 FROM `{full_historical_processable_table}` h1
                 WHERE created_at >= '{three_months_ago_date}'
-                    AND id_prestador IS NOT NULL
+                    AND id_matricula IS NOT NULL
                     AND NOT EXISTS (
                         SELECT 1
                         FROM batch_id_arvo b
                         WHERE b.id_arvo = h1.id_arvo
                     )
                 UNION ALL
-                SELECT id_prestador
+                SELECT id_matricula
                 FROM `{full_historical_unprocessable_table}` h1
                 WHERE created_at >= '{three_months_ago_date}'
-                    AND id_prestador IS NOT NULL
+                    AND id_matricula IS NOT NULL
                     AND NOT EXISTS (
                         SELECT 1
                         FROM batch_id_arvo b
@@ -186,25 +187,25 @@ class NewProvidersBaseHandler(Handler):
                     )
             )
         ),
-        provider_counts AS (
+        beneficiary_counts AS (
             SELECT
-                COUNT(DISTINCT bp.id_prestador) AS total_providers,
+                COUNT(DISTINCT bb.id_matricula) AS total_beneficiaries,
                 COUNT(DISTINCT CASE
-                    WHEN hp.id_prestador IS NULL THEN bp.id_prestador
-                END) AS new_providers
-            FROM batch_providers bp
-            LEFT JOIN historical_providers hp
-                ON bp.id_prestador = hp.id_prestador
+                    WHEN hb.id_matricula IS NULL THEN bb.id_matricula
+                END) AS new_beneficiaries
+            FROM batch_beneficiaries bb
+            LEFT JOIN historical_beneficiaries hb
+                ON bb.id_matricula = hb.id_matricula
         )
         SELECT
-            total_providers,
-            COALESCE(new_providers, 0) AS new_providers,
+            total_beneficiaries,
+            COALESCE(new_beneficiaries, 0) AS new_beneficiaries,
             CASE
-                WHEN total_providers > 0 THEN
-                    CAST(COALESCE(new_providers, 0) AS FLOAT64) / total_providers
+                WHEN total_beneficiaries > 0 THEN
+                    CAST(COALESCE(new_beneficiaries, 0) AS FLOAT64) / total_beneficiaries
                 ELSE 0.0
             END AS new_pct
-        FROM provider_counts
+        FROM beneficiary_counts
         """
 
         try:
@@ -222,7 +223,7 @@ class NewProvidersBaseHandler(Handler):
 
             if historical_tables_exist:
                 # Query with historical tables
-                query_job = self.bq_client.query(new_providers_query)
+                query_job = self.bq_client.query(new_beneficiaries_query)
                 result = query_job.result()
                 for row in result:
                     new_pct = float(row.new_pct or 0.0)
@@ -231,18 +232,18 @@ class NewProvidersBaseHandler(Handler):
                     emit_gauge_metric(
                         monitoring_client=self.monitoring_client,
                         project_id=self.run_project_id,
-                        name="claims/providers/new_pct_3mo",
+                        name="claims/beneficiaries/new_pct_3mo",
                         value=new_pct,
                         labels=base_labels,
                         timestamp=source_timestamp,
                     )
             else:
-                # If historical tables don't exist, assume all providers are new (100%)
-                # Emit metric with 100% new providers
+                # If historical tables don't exist, assume all beneficiaries are new (100%)
+                # Emit metric with 100% new beneficiaries
                 emit_gauge_metric(
                     monitoring_client=self.monitoring_client,
                     project_id=self.run_project_id,
-                    name="claims/providers/new_pct_3mo",
+                    name="claims/beneficiaries/new_pct_3mo",
                     value=1.0,
                     labels=base_labels,
                     timestamp=source_timestamp,
