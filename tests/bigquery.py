@@ -66,3 +66,39 @@ def create_claims_tables(bigquery_client, dataset_id: str) -> tuple[str, str]:
         bigquery_client.create_table(table, exists_ok=True)
 
     return unprocessable_table_id, processable_table_id
+
+
+def create_provider_table_with_data(
+    bigquery_client, dataset_id: str, table_id: str, rows: list[dict]
+) -> None:
+    """Create a provider table with id_arvo, id_prestador, categoria, created_at columns.
+
+    Inserts test data into the table.
+    """
+    schema = [
+        bigquery.SchemaField("id_arvo", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("id_prestador", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("categoria", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("created_at", "TIMESTAMP", mode="NULLABLE"),
+    ]
+    table = bigquery.Table(f"{bigquery_client.project}.{dataset_id}.{table_id}", schema=schema)
+    bigquery_client.create_table(table, exists_ok=True)
+    bigquery_client.insert_rows_json(f"{bigquery_client.project}.{dataset_id}.{table_id}", rows)
+
+
+def create_beneficiary_table_with_data(
+    bigquery_client, dataset_id: str, table_id: str, rows: list[dict]
+) -> None:
+    """Create a beneficiary table with id_arvo, id_matricula, categoria, created_at columns.
+
+    Inserts test data into the table.
+    """
+    schema = [
+        bigquery.SchemaField("id_arvo", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("id_matricula", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("categoria", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("created_at", "TIMESTAMP", mode="NULLABLE"),
+    ]
+    table = bigquery.Table(f"{bigquery_client.project}.{dataset_id}.{table_id}", schema=schema)
+    bigquery_client.create_table(table, exists_ok=True)
+    bigquery_client.insert_rows_json(f"{bigquery_client.project}.{dataset_id}.{table_id}", rows)

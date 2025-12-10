@@ -1,6 +1,6 @@
 [project]
 name = "mageai-monitoring"
-version = "0.4.0"
+version = "0.10.0"
 description = "GCP Cloud Run service for monitoring Mage.ai pipeline runs and emitting metrics to Cloud Monitoring"
 readme = "README.md"
 requires-python = ">=3.12"
