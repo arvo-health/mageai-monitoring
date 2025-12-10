@@ -63,7 +63,6 @@ class NewProvidersBaseHandler(Handler):
 
         Args:
             decoded_message: The decoded message dictionary containing pipeline completion data
-            pipeline_uuid: The pipeline UUID to verify (for defensive check)
             batch_processable_table_var: Variable name for the batch processable claims table
             batch_unprocessable_table_var: Variable name for the batch unprocessable claims table
             historical_processable_table_var: Variable name for the historical processable
@@ -190,7 +189,9 @@ class NewProvidersBaseHandler(Handler):
         provider_counts AS (
             SELECT
                 COUNT(DISTINCT bp.id_prestador) AS total_providers,
-                COUNT(DISTINCT CASE WHEN hp.id_prestador IS NULL THEN bp.id_prestador END) AS new_providers
+                COUNT(
+                    DISTINCT CASE WHEN hp.id_prestador IS NULL THEN bp.id_prestador END
+                ) AS new_providers
             FROM batch_providers bp
             LEFT JOIN historical_providers hp
                 ON bp.id_prestador = hp.id_prestador
