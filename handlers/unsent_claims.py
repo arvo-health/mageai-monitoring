@@ -2,8 +2,9 @@
 
 from datetime import datetime, timedelta
 
-from handlers.base import Handler, HandlerBadRequestError
 from google.cloud import bigquery, monitoring_v3
+
+from handlers.base import Handler, HandlerBadRequestError
 from metrics import emit_gauge_metric
 
 
@@ -17,13 +18,21 @@ class UnsentClaimsHandler(Handler):
 
     It then emits two metrics representing the sum of vl_pago and vl_info of unsent claims.
 
-    To be considered unsent, besides being missing from the submitted_claims_output_table, the claim must
-    have been ingested before the most recent submitted claim's `ingested_at` timestamp according to the submission_run_id,
-    and be within the last 2 days.
+    To be considered unsent, besides being missing from the submitted_claims_output_table,
+    the claim must have been ingested before the most recent submitted claim's `ingested_at`
+    timestamp according to the submission_run_id, and be within the last 2 days.
 
-    If there are no submitted claims for the submission_run_id, the handler will use the source timestamp minus 20 minutes.
+    If there are no submitted claims for the submission_run_id, the handler will use the
+    source_timestamp minus 20 minutes.
     """
-    def __init__(self, monitoring_client: monitoring_v3.MetricServiceClient, bq_client: bigquery.Client, run_project_id: str, data_project_id: str):
+
+    def __init__(
+        self,
+        monitoring_client: monitoring_v3.MetricServiceClient,
+        bq_client: bigquery.Client,
+        run_project_id: str,
+        data_project_id: str,
+    ):
         """
         Initialize the handler.
 
@@ -67,8 +76,8 @@ class UnsentClaimsHandler(Handler):
         """
         Calculate unsent claims metrics and emit to Cloud Monitoring.
 
-        Queries BigQuery to list the claims in the processable_claims_output_table and unprocessable_claims_output_table that
-        are not in the submitted_claims_output_table.
+        Queries BigQuery to list the claims in the processable_claims_output_table and
+        unprocessable_claims_output_table that are not in the submitted_claims_output_table.
         It then emits a metric representing the total value of unsent claims (vl_pago and vl_info).
 
         Args:
@@ -83,7 +92,9 @@ class UnsentClaimsHandler(Handler):
 
         partner_value = variables.get("partner")
         processable_claims_historical_table = variables.get("processable_claims_historical_table")
-        unprocessable_claims_historical_table = variables.get("unprocessable_claims_historical_table")
+        unprocessable_claims_historical_table = variables.get(
+            "unprocessable_claims_historical_table"
+        )
         submitted_claims_output_table = variables.get("claims_submitted_output_table")
         submission_run_id = variables.get("submission_run_id")
 
@@ -96,14 +107,20 @@ class UnsentClaimsHandler(Handler):
         if not partner_value:
             raise HandlerBadRequestError("Missing required 'partner' variable in payload.")
         if not submission_run_id:
-            raise HandlerBadRequestError("Missing required 'submission_run_id' variable in payload.")
+            raise HandlerBadRequestError(
+                "Missing required 'submission_run_id' variable in payload."
+            )
 
         # Ensure fully-qualified table paths
         def ensure_full_table_ref(table: str) -> str:
             return table if "." in table else f"{self.data_project_id}.{table}"
 
-        full_processable_claims_historical_table = ensure_full_table_ref(processable_claims_historical_table)
-        full_unprocessable_claims_historical_table = ensure_full_table_ref(unprocessable_claims_historical_table)
+        full_processable_claims_historical_table = ensure_full_table_ref(
+            processable_claims_historical_table
+        )
+        full_unprocessable_claims_historical_table = ensure_full_table_ref(
+            unprocessable_claims_historical_table
+        )
         full_submitted_claims_output_table = ensure_full_table_ref(submitted_claims_output_table)
 
         # Parse timestamp
@@ -115,26 +132,31 @@ class UnsentClaimsHandler(Handler):
         twenty_minutes_ago_str = (source_timestamp - timedelta(minutes=20)).isoformat()
 
         # Query to find claims that were ingested but not submitted
-        # List the claims in the processable_claims_output_table and unprocessable_claims_output_table that
-        # are not in the submitted_claims_output_table and also follow the time constraints.
+        # Check the claims in the processable_claims_historical_table and
+        # unprocessable_claims_historical_table that are not in the submitted_claims_output_table
+        # and also follow the time constraints.
         unsent_claims_query = f"""
         WITH submitted AS (
-          SELECT COALESCE(MAX(ingested_at), TIMESTAMP '{twenty_minutes_ago_str}') as latest_ingested_at
+          SELECT
+            COALESCE(MAX(ingested_at), TIMESTAMP '{twenty_minutes_ago_str}') as latest_ingested_at
           FROM `{full_submitted_claims_output_table}`
           WHERE submission_run_id = '{submission_run_id}'
         ),
         date_range AS (
-          SELECT TIMESTAMP_SUB(latest_ingested_at, INTERVAL 2 DAY) as start_date, latest_ingested_at as end_date
+          SELECT TIMESTAMP_SUB(latest_ingested_at, INTERVAL 2 DAY) as start_date,
+            latest_ingested_at as end_date
           FROM submitted
         ),
         ingested_claims AS (
           SELECT id_arvo, vl_pago, vl_info
           FROM `{full_processable_claims_historical_table}`
-          WHERE ingested_at BETWEEN (SELECT start_date FROM date_range) AND (SELECT end_date FROM date_range)
+          WHERE ingested_at BETWEEN (SELECT start_date FROM date_range)
+            AND (SELECT end_date FROM date_range)
           UNION DISTINCT
           SELECT id_arvo, vl_pago, vl_info
           FROM `{full_unprocessable_claims_historical_table}`
-          WHERE ingested_at BETWEEN (SELECT start_date FROM date_range) AND (SELECT end_date FROM date_range)
+          WHERE ingested_at BETWEEN (SELECT start_date FROM date_range)
+            AND (SELECT end_date FROM date_range)
         )
         SELECT
           COALESCE(SUM(c.vl_pago), 0) AS unsent_vl_pago,
@@ -155,7 +177,7 @@ class UnsentClaimsHandler(Handler):
             unsent_vl_info = float(row.unsent_vl_info or 0.0)
 
         # Build labels: partner is required
-        labels = { "partner": partner_value }
+        labels = {"partner": partner_value}
 
         # Emit metric representing the sum of vl_pago of unsent claims
         emit_gauge_metric(
