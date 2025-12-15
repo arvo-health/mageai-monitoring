@@ -15,7 +15,7 @@ from handlers.base import Handler, HandlerBadRequestError
 from metrics import emit_gauge_metric
 
 
-class SavingsApprovalHandler(Handler):
+class SelectedSavingsApprovalHandler(Handler):
     """
     Calculates and emits metrics for savings grouped by agent_id.
 
@@ -156,3 +156,4 @@ class SavingsApprovalHandler(Handler):
         except NotFound:
             # If table doesn't exist, don't emit any metrics
             return
+

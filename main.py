@@ -22,6 +22,7 @@ from handlers.processable_approval import ProcessableApprovalHandler
 from handlers.processable_wrangling import ProcessableWranglingHandler
 from handlers.savings_approval import SavingsApprovalHandler
 from handlers.unsent_claims import UnsentClaimsHandler
+from handlers.selected_savings_approval import SelectedSavingsApprovalHandler
 from metrics import create_monitoring_client
 
 logging.basicConfig(level=logging.INFO)
@@ -84,7 +85,7 @@ def create_handlers(
             run_project_id=config.cloud_run_project_id,
             data_project_id=config.bigquery_project_id,
         ),
-        SavingsApprovalHandler(
+        SelectedSavingsApprovalHandler(
             monitoring_client=monitoring_client,
             bq_client=bq_client,
             run_project_id=config.cloud_run_project_id,

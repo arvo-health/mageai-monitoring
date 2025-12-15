@@ -1,11 +1,11 @@
-"""Unit and integration tests for SavingsApprovalHandler."""
+"""Unit and integration tests for SelectedSavingsApprovalHandler."""
 
 import pytest
 from cloudevents.http import CloudEvent
 from google.cloud import bigquery
 from pytest_mock import MockerFixture
 
-from handlers.savings_approval import SavingsApprovalHandler
+from handlers.selected_savings_approval import SelectedSavingsApprovalHandler
 from tests.bigquery import create_dataset
 from tests.conftest import assert_response_success
 from tests.metrics import MetricMatcher, assert_metrics_emitted
@@ -134,7 +134,7 @@ def _create_expected_metric_calls(
 )
 def test_match(mocker: MockerFixture, decoded_message, expected):
     """Test that match returns the expected result for various message configurations."""
-    handler = SavingsApprovalHandler(
+    handler = SelectedSavingsApprovalHandler(
         monitoring_client=mocker.MagicMock(),
         bq_client=mocker.MagicMock(),
         run_project_id="test-project",
@@ -165,7 +165,7 @@ def test_handle_queries_and_emits_metrics(mocker: MockerFixture):
     mock_query_job.result.return_value = mock_result
     mock_bq_client.query.return_value = mock_query_job
 
-    handler = SavingsApprovalHandler(
+    handler = SelectedSavingsApprovalHandler(
         monitoring_client=mock_monitoring_client,
         bq_client=mock_bq_client,
         run_project_id="test-project",
@@ -185,7 +185,7 @@ def test_handle_queries_and_emits_metrics(mocker: MockerFixture):
     }
 
     # Mock emit_gauge_metric
-    mock_emit = mocker.patch("handlers.savings_approval.emit_gauge_metric")
+    mock_emit = mocker.patch("handlers.selected_savings_approval.emit_gauge_metric")
 
     handler.handle(decoded_message)
 
@@ -221,14 +221,14 @@ def test_handle_queries_and_emits_metrics(mocker: MockerFixture):
 
 
 @pytest.mark.integration
-def test_savings_approval_handler_with_multiple_agents(
+def test_selected_savings_approval_handler_with_multiple_agents(
     bigquery_client,
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
     dispatch_event,
 ):
-    """Integration test for SavingsApprovalHandler with multiple agent_ids.
+    """Integration test for SelectedSavingsApprovalHandler with multiple agent_ids.
 
     This test:
     1. Creates BigQuery table with agent_id and vl_glosa_arvo columns
@@ -264,7 +264,7 @@ def test_savings_approval_handler_with_multiple_agents(
             ],
         )
 
-        response = dispatch_event(event, [SavingsApprovalHandler])
+        response = dispatch_event(event, [SelectedSavingsApprovalHandler])
 
         assert_response_success(response)
         assert_metrics_emitted(mock_monitoring_client, expected_calls)
@@ -274,14 +274,14 @@ def test_savings_approval_handler_with_multiple_agents(
 
 
 @pytest.mark.integration
-def test_savings_approval_handler_empty_table(
+def test_selected_savings_approval_handler_empty_table(
     bigquery_client,
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
     dispatch_event,
 ):
-    """Integration test for SavingsApprovalHandler with empty table.
+    """Integration test for SelectedSavingsApprovalHandler with empty table.
 
     This test:
     1. Creates empty BigQuery table
@@ -306,7 +306,7 @@ def test_savings_approval_handler_empty_table(
             selected_savings_table_id=selected_savings_table_id,
         )
 
-        response = dispatch_event(event, [SavingsApprovalHandler])
+        response = dispatch_event(event, [SelectedSavingsApprovalHandler])
 
         assert_response_success(response)
         # Verify no metrics were emitted
@@ -317,14 +317,14 @@ def test_savings_approval_handler_empty_table(
 
 
 @pytest.mark.integration
-def test_savings_approval_handler_table_not_found(
+def test_selected_savings_approval_handler_table_not_found(
     bigquery_client,
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
     dispatch_event,
 ):
-    """Integration test for SavingsApprovalHandler when table doesn't exist.
+    """Integration test for SelectedSavingsApprovalHandler when table doesn't exist.
 
     This test:
     1. Creates a dataset but no table
@@ -344,7 +344,7 @@ def test_savings_approval_handler_table_not_found(
             selected_savings_table_id=selected_savings_table_id,
         )
 
-        response = dispatch_event(event, [SavingsApprovalHandler])
+        response = dispatch_event(event, [SelectedSavingsApprovalHandler])
 
         assert_response_success(response)
         # Verify no metrics were emitted
@@ -352,3 +352,4 @@ def test_savings_approval_handler_table_not_found(
 
     finally:
         bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
+
