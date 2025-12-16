@@ -59,31 +59,36 @@ def _create_cloud_event(
 def _create_expected_metric_calls(
     mocker: MockerFixture,
     partner: str,
-    vl_pago: float,
-    vl_info: float,
+    values: list[dict],
 ) -> list:
     """Create expected metric call matchers."""
     expected_project = "projects/arvo-eng-prd"
-    expected_labels = {"partner": partner}
 
-    return [
-        mocker.call(
-            name=expected_project,
-            time_series=MetricMatcher(
-                metric_type="claims/pipeline/delta_recv_sent/vl_pago",
-                value=vl_pago,
-                labels=expected_labels,
+    calls = []
+    for value in values:
+        calls.append(
+            mocker.call(
+                name=expected_project,
+                time_series=MetricMatcher(
+                    metric_type="claims/pipeline/claims/vl_pago/sent_over_recv_last_2_days",
+                    value=value["perc_pago"],
+                    labels={"partner": partner, "status": value["status"]},
+                ),
             ),
-        ),
-        mocker.call(
-            name=expected_project,
-            time_series=MetricMatcher(
-                metric_type="claims/pipeline/delta_recv_sent/vl_info",
-                value=vl_info,
-                labels=expected_labels,
+        )
+
+        calls.append(
+            mocker.call(
+                name=expected_project,
+                time_series=MetricMatcher(
+                    metric_type="claims/pipeline/claims/vl_informado/sent_over_recv_last_2_days",
+                    value=value["perc_info"],
+                    labels={"partner": partner, "status": value["status"]},
+                ),
             ),
-        ),
-    ]
+        )
+
+    return calls
 
 
 def create_claims_table_with_data(
@@ -115,6 +120,7 @@ def create_submitted_claims_table_with_data(
         bigquery.SchemaField("id_arvo", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("submission_run_id", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("ingested_at", "TIMESTAMP", mode="NULLABLE"),
+        bigquery.SchemaField("status", "STRING", mode="NULLABLE"),
     ]
     table = bigquery.Table(f"{bigquery_client.project}.{dataset_id}.{table_id}", schema=schema)
     bigquery_client.create_table(table, exists_ok=True)
@@ -207,27 +213,27 @@ def test_handle_queries_and_emits_metrics(
                 "ingested_at": three_days_before_str,  # Ignored
             },
             {
-                "id_arvo": "p2",  # Counted as unsent
-                "vl_pago": 35.0,
-                "vl_info": 45.0,
+                "id_arvo": "p2",  # Missing from submitted claims
+                "vl_pago": 50.0,
+                "vl_info": 100.0,
                 "ingested_at": one_day_before_str,
             },
             {
                 "id_arvo": "p3",
-                "vl_pago": 71.0,
-                "vl_info": 91.0,
+                "vl_pago": 300.0,
+                "vl_info": 300.0,
                 "ingested_at": one_day_before_str,
             },
             {
                 "id_arvo": "p4",
-                "vl_pago": 112.0,
-                "vl_info": 112.0,
+                "vl_pago": 50.0,
+                "vl_info": 100.0,
                 "ingested_at": submitted_ingested_at_str,
             },
             {
-                "id_arvo": "p5",  # Counted as unsent
-                "vl_pago": 25.0,
-                "vl_info": 25.0,
+                "id_arvo": "p5",  # Missing from submitted claims
+                "vl_pago": 50.0,
+                "vl_info": 50.0,
                 "ingested_at": submitted_ingested_at_str,
             },
             {
@@ -253,14 +259,14 @@ def test_handle_queries_and_emits_metrics(
             },
             {
                 "id_arvo": "u2",
-                "vl_pago": 23.0,
-                "vl_info": 28.0,
+                "vl_pago": 200.0,
+                "vl_info": 250.0,
                 "ingested_at": one_day_before_str,
             },
             {
-                "id_arvo": "u3",  # Counted as unsent
-                "vl_pago": 99.0,
-                "vl_info": 109.0,
+                "id_arvo": "u3", # Missing from submitted claims
+                "vl_pago": 150.0,
+                "vl_info": 200.0,
                 "ingested_at": submitted_ingested_at_str,
             },
             {
@@ -276,16 +282,19 @@ def test_handle_queries_and_emits_metrics(
                 "id_arvo": "p3",
                 "submission_run_id": submission_run_id,
                 "ingested_at": one_day_before_str,
+                "status": "SUBMITTED_SUCCESS",
             },
             {
                 "id_arvo": "p4",
                 "submission_run_id": submission_run_id,
                 "ingested_at": submitted_ingested_at_str,
+                "status": "SUBMITTED_ERROR",
             },
             {
                 "id_arvo": "u2",
                 "submission_run_id": submission_run_id,
                 "ingested_at": one_day_before_str,
+                "status": "RETRY",
             },
         ]
 
@@ -313,8 +322,23 @@ def test_handle_queries_and_emits_metrics(
         expected_calls = _create_expected_metric_calls(
             mocker,
             partner="porto",
-            vl_pago=159.0,
-            vl_info=179.0,
+            values=[
+                {
+                  "status": "RETRY",
+                  "perc_pago": 0.25,
+                  "perc_info": 0.25,
+                },
+                {
+                  "status": "SUBMITTED_ERROR",
+                  "perc_pago": 0.0625,
+                  "perc_info": 0.1,
+                },
+                {
+                  "status": "SUBMITTED_SUCCESS",
+                  "perc_pago": 0.375,
+                  "perc_info": 0.3,
+                },
+            ]
         )
 
         response = dispatch_event(event, [UnsentClaimsHandler])
@@ -334,7 +358,10 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
     dispatch_event,
 ):
     """Test that handle queries BigQuery and emits metrics for the sum of vl_pago and vl_info
-    of unsent claims when there are no submitted claims."""
+    of unsent claims when there are no submitted claims within the last 2 days.
+
+    In this case, we should emit 0% for the success metric as nothing was submitted.
+    """
 
     dataset_id = "test_dataset"
     processable_table_id = "processable_claims"
@@ -358,35 +385,36 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
         # Recent ingested at (outside the range)
         five_minutes_after_str = (submitted_ingested_at + timedelta(minutes=5)).isoformat()
 
+
         processable_rows = [
             {
                 "id_arvo": "p1",
                 "vl_pago": 1000.0,
                 "vl_info": 1000.0,
-                "ingested_at": three_days_before_str,  # ignored
+                "ingested_at": three_days_before_str,  # Ignored
             },
             {
-                "id_arvo": "p2",  # Counted as unsent
-                "vl_pago": 35.0,
-                "vl_info": 45.0,
+                "id_arvo": "p2",  # Missing from submitted claims
+                "vl_pago": 50.0,
+                "vl_info": 100.0,
                 "ingested_at": one_day_before_str,
             },
             {
-                "id_arvo": "p3",  # Counted as unsent
-                "vl_pago": 71.0,
-                "vl_info": 91.0,
+                "id_arvo": "p3",
+                "vl_pago": 300.0,
+                "vl_info": 300.0,
                 "ingested_at": one_day_before_str,
             },
             {
-                "id_arvo": "p4",  # Counted as unsent
-                "vl_pago": 112.0,
-                "vl_info": 112.0,
+                "id_arvo": "p4",
+                "vl_pago": 50.0,
+                "vl_info": 100.0,
                 "ingested_at": submitted_ingested_at_str,
             },
             {
-                "id_arvo": "p5",  # Counted as unsent
-                "vl_pago": 25.0,
-                "vl_info": 25.0,
+                "id_arvo": "p5",  # Missing from submitted claims
+                "vl_pago": 50.0,
+                "vl_info": 50.0,
                 "ingested_at": submitted_ingested_at_str,
             },
             {
@@ -411,15 +439,15 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
                 "ingested_at": three_days_before_str,  # Ignored
             },
             {
-                "id_arvo": "u2",  # Counted as unsent
-                "vl_pago": 23.0,
-                "vl_info": 28.0,
+                "id_arvo": "u2",
+                "vl_pago": 200.0,
+                "vl_info": 250.0,
                 "ingested_at": one_day_before_str,
             },
             {
-                "id_arvo": "u3",  # Counted as unsent
-                "vl_pago": 99.0,
-                "vl_info": 109.0,
+                "id_arvo": "u3", # Missing from submitted claims
+                "vl_pago": 150.0,
+                "vl_info": 200.0,
                 "ingested_at": submitted_ingested_at_str,
             },
             {
@@ -430,7 +458,38 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
             },
         ]
 
-        submitted_rows = []
+        submitted_rows = [
+            {
+                "id_arvo": "p1",
+                "submission_run_id": "run_A",
+                "ingested_at": three_days_before_str,
+                "status": "SUBMITTED_SUCCESS",
+            },
+            {
+                "id_arvo": "u1",
+                "submission_run_id": "run_A",
+                "ingested_at": three_days_before_str,
+                "status": "SUBMITTED_SUCCESS",
+            },
+            {
+                "id_arvo": "p6",
+                "submission_run_id": "run_B",
+                "ingested_at": five_minutes_after_str,
+                "status": "SUBMITTED_SUCCESS",
+            },
+            {
+                "id_arvo": "p7",
+                "submission_run_id": "run_B",
+                "ingested_at": five_minutes_after_str,
+                "status": "SUBMITTED_SUCCESS",
+            },
+            {
+                "id_arvo": "u4",
+                "submission_run_id": "run_B",
+                "ingested_at": five_minutes_after_str,
+                "status": "SUBMITTED_SUCCESS",
+            },
+        ]
 
         create_claims_table_with_data(
             bigquery_client, dataset_id, processable_table_id, rows=processable_rows
@@ -456,8 +515,155 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
         expected_calls = _create_expected_metric_calls(
             mocker,
             partner="porto",
-            vl_pago=365.0,
-            vl_info=410.0,
+            values=[
+                {
+                  "status": "SUBMITTED_SUCCESS",
+                  "perc_pago": 0.0,
+                  "perc_info": 0.0,
+                },
+            ]
+        )
+
+        response = dispatch_event(event, [UnsentClaimsHandler])
+
+        assert_response_success(response)
+        assert_metrics_emitted(mock_monitoring_client, expected_calls)
+    finally:
+        bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
+
+
+@pytest.mark.integration
+def test_handle_queries_and_emits_metrics_no_ingested_claims_to_submit(
+    bigquery_client,
+    mock_monitoring_client,
+    flask_app,
+    mocker: MockerFixture,
+    dispatch_event,
+):
+    """Test that handle queries BigQuery and emits metrics for the sum of vl_pago and vl_info
+    of unsent claims when there are no ingested claims to submit within the last 2 days.
+
+    In this case, we should emit 100% for the success metric as there's nothing to submit.
+    """
+
+    dataset_id = "test_dataset"
+    processable_table_id = "processable_claims"
+    unprocessable_table_id = "unprocessable_claims"
+    submitted_table_id = "submitted_claims"
+    submission_run_id = "run_X"
+    source_timestamp = "2024-01-15T10:30:00Z"
+
+    create_dataset(bigquery_client, dataset_id)
+
+    try:
+        # The fallback timestamp is the source_timestamp minus 20 minutes
+        submitted_ingested_at = datetime.fromisoformat(source_timestamp) - timedelta(minutes=20)
+
+        # Old ingested at (outside the range)
+        three_days_before_str = (submitted_ingested_at - timedelta(days=3)).isoformat()
+        # Recent ingested at (outside the range)
+        five_minutes_after_str = (submitted_ingested_at + timedelta(minutes=5)).isoformat()
+
+        processable_rows = [
+            {
+                "id_arvo": "p1",
+                "vl_pago": 1000.0,
+                "vl_info": 1000.0,
+                "ingested_at": three_days_before_str,  # Ignored
+            },
+            {
+                "id_arvo": "p6",
+                "vl_pago": 1000.0,
+                "vl_info": 1000.0,
+                "ingested_at": five_minutes_after_str,  # Ignored
+            },
+            {
+                "id_arvo": "p7",
+                "vl_pago": 1000.0,
+                "vl_info": 1000.0,
+                "ingested_at": five_minutes_after_str,  # Ignored
+            },
+        ]
+
+        unprocessable_rows = [
+            {
+                "id_arvo": "u1",
+                "vl_pago": 1000.0,
+                "vl_info": 1000.0,
+                "ingested_at": three_days_before_str,  # Ignored
+            },
+            {
+                "id_arvo": "u4",
+                "vl_pago": 1000.0,
+                "vl_info": 1000.0,
+                "ingested_at": five_minutes_after_str,  # Ignored
+            },
+        ]
+
+        submitted_rows = [
+            {
+                "id_arvo": "p1",
+                "submission_run_id": "run_A",
+                "ingested_at": three_days_before_str,
+                "status": "SUBMITTED_SUCCESS",
+            },
+            {
+                "id_arvo": "u1",
+                "submission_run_id": "run_A",
+                "ingested_at": three_days_before_str,
+                "status": "SUBMITTED_SUCCESS",
+            },
+            {
+                "id_arvo": "p6",
+                "submission_run_id": "run_B",
+                "ingested_at": five_minutes_after_str,
+                "status": "SUBMITTED_SUCCESS",
+            },
+            {
+                "id_arvo": "p7",
+                "submission_run_id": "run_B",
+                "ingested_at": five_minutes_after_str,
+                "status": "SUBMITTED_SUCCESS",
+            },
+            {
+                "id_arvo": "u4",
+                "submission_run_id": "run_B",
+                "ingested_at": five_minutes_after_str,
+                "status": "SUBMITTED_SUCCESS",
+            },
+        ]
+
+        create_claims_table_with_data(
+            bigquery_client, dataset_id, processable_table_id, rows=processable_rows
+        )
+        create_claims_table_with_data(
+            bigquery_client, dataset_id, unprocessable_table_id, rows=unprocessable_rows
+        )
+        create_submitted_claims_table_with_data(
+            bigquery_client, dataset_id, submitted_table_id, rows=submitted_rows
+        )
+
+        event = _create_cloud_event(
+            bigquery_client=bigquery_client,
+            dataset_id=dataset_id,
+            partner="porto",
+            processable_table_id=processable_table_id,
+            unprocessable_table_id=unprocessable_table_id,
+            submitted_table_id=submitted_table_id,
+            submission_run_id=submission_run_id,
+            source_timestamp=source_timestamp,
+        )
+
+        expected_calls = _create_expected_metric_calls(
+            mocker,
+            partner="porto",
+            values=[
+                {
+                  "status": "SUBMITTED_SUCCESS",
+                  "perc_pago": 1.0,
+                  "perc_info": 1.0,
+                },
+            ]
         )
 
         response = dispatch_event(event, [UnsentClaimsHandler])

@@ -135,66 +135,98 @@ class UnsentClaimsHandler(Handler):
         # Check the claims in the processable_claims_historical_table and
         # unprocessable_claims_historical_table that are not in the submitted_claims_output_table
         # and also follow the time constraints.
+        # Time constraints:
+        # - The claims must have been ingested from before (or at the same time as) the most recent
+        #   submitted claim's `ingested_at` timestamp according to the submission_run_id
+        #   - If there are no submitted claims for the submission_run_id, the handler will use the
+        #       source_timestamp minus 20 minutes as the fallback timestamp.
+        # - The claims must have been ingested within the last 2 days, from the latest ingested_at
+        #   timestamp (real or fallback)
+        # The filter by submission_run_id and the fallback are important because if there are no
+        # submitted claims associated with it, we don't want to get an older ingested_at timestamp
+        # from another submission run, as it would give us a wrong time window.
         unsent_claims_query = f"""
-        WITH submitted AS (
+        # Get the latest ingested_at timestamp for the submission_run_id
+        WITH submitted_timestamps AS (
           SELECT
             COALESCE(MAX(ingested_at), TIMESTAMP '{twenty_minutes_ago_str}') as latest_ingested_at
           FROM `{full_submitted_claims_output_table}`
           WHERE submission_run_id = '{submission_run_id}'
         ),
+        # Create the date range
         date_range AS (
           SELECT TIMESTAMP_SUB(latest_ingested_at, INTERVAL 2 DAY) as start_date,
             latest_ingested_at as end_date
-          FROM submitted
+          FROM submitted_timestamps
         ),
+        # Get the ingested claims within the date range
         ingested_claims AS (
           SELECT id_arvo, vl_pago, vl_info
           FROM `{full_processable_claims_historical_table}`
-          WHERE ingested_at BETWEEN (SELECT start_date FROM date_range)
-            AND (SELECT end_date FROM date_range)
+          CROSS JOIN date_range AS dr
+          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
           UNION DISTINCT
           SELECT id_arvo, vl_pago, vl_info
           FROM `{full_unprocessable_claims_historical_table}`
-          WHERE ingested_at BETWEEN (SELECT start_date FROM date_range)
-            AND (SELECT end_date FROM date_range)
+          CROSS JOIN date_range AS dr
+          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
+        ),
+        # Get the total vl_pago and vl_info of the ingested claims
+        ingested_totals AS (
+          SELECT sum(vl_pago) as total_pago, sum(vl_info) as total_info
+          FROM ingested_claims
+        ),
+        # Get the total vl_pago and vl_info of the submitted claims by status
+        totals_by_status AS (
+          SELECT s.status, SUM(ic.vl_pago) as status_pago, SUM(ic.vl_info) as status_info
+          FROM `{full_submitted_claims_output_table}` s
+          INNER JOIN ingested_claims ic ON s.id_arvo = ic.id_arvo
+          GROUP BY s.status
+        ),
+        # Get the statuses ensuring at least SUBMITTED_SUCCESS is present
+        statuses AS (
+          SELECT status FROM totals_by_status
+          UNION DISTINCT
+          SELECT 'SUBMITTED_SUCCESS' as status
         )
-        SELECT
-          COALESCE(SUM(c.vl_pago), 0) AS unsent_vl_pago,
-          COALESCE(SUM(c.vl_info), 0) AS unsent_vl_info
-        FROM ingested_claims c
-        LEFT JOIN `{full_submitted_claims_output_table}` s
-          ON c.id_arvo = s.id_arvo
-        WHERE s.id_arvo IS NULL
+        # Calculate the percentage of vl_pago and vl_info for each status
+        # If the total is 0 or NULL, we set the percentage to 1.0 (100%)
+        # Otherwise, we calculate the ratio of the status values to the total values
+        SELECT s.status,
+          CASE IFNULL(it.total_pago, 0)
+            WHEN 0 THEN 1.0
+            ELSE COALESCE(SAFE_DIVIDE(tbs.status_pago, it.total_pago), 0)
+          END AS perc_pago,
+          CASE IFNULL(it.total_info, 0)
+            WHEN 0 THEN 1.0
+            ELSE COALESCE(SAFE_DIVIDE(tbs.status_info, it.total_info), 0)
+          END AS perc_info
+        FROM statuses s
+        LEFT JOIN totals_by_status tbs ON s.status = tbs.status
+        CROSS JOIN ingested_totals it
         """
         query_job = self.bq_client.query(unsent_claims_query)
         result = query_job.result()
-        row = next(result, None)
 
-        unsent_vl_pago = 0.0
-        unsent_vl_info = 0.0
-        if row:
-            unsent_vl_pago = float(row.unsent_vl_pago or 0.0)
-            unsent_vl_info = float(row.unsent_vl_info or 0.0)
+        for row in result:
+            status = row.status
+            perc_pago = float(row.perc_pago or 0.0)
+            perc_info = float(row.perc_info or 0.0)
 
-        # Build labels: partner is required
-        labels = {"partner": partner_value}
-
-        # Emit metric representing the sum of vl_pago of unsent claims
-        emit_gauge_metric(
-            monitoring_client=self.monitoring_client,
-            project_id=self.run_project_id,
-            name="claims/pipeline/delta_recv_sent/vl_pago",
-            value=unsent_vl_pago,
-            labels=labels,
-            timestamp=source_timestamp,
-        )
-
-        # Emit metric representing the sum of vl_info of unsent claims
-        emit_gauge_metric(
-            monitoring_client=self.monitoring_client,
-            project_id=self.run_project_id,
-            name="claims/pipeline/delta_recv_sent/vl_info",
-            value=unsent_vl_info,
-            labels=labels,
-            timestamp=source_timestamp,
-        )
+            labels = {"partner": partner_value, "status": status}
+            emit_gauge_metric(
+                monitoring_client=self.monitoring_client,
+                project_id=self.run_project_id,
+                name="claims/pipeline/claims/vl_pago/sent_over_recv_last_2_days",
+                value=perc_pago,
+                labels=labels,
+                timestamp=source_timestamp,
+            )
+            emit_gauge_metric(
+                monitoring_client=self.monitoring_client,
+                project_id=self.run_project_id,
+                name="claims/pipeline/claims/vl_informado/sent_over_recv_last_2_days",
+                value=perc_info,
+                labels=labels,
+                timestamp=source_timestamp,
+            )
