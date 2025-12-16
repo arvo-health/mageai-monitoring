@@ -264,7 +264,7 @@ def test_handle_queries_and_emits_metrics(
                 "ingested_at": one_day_before_str,
             },
             {
-                "id_arvo": "u3", # Missing from submitted claims
+                "id_arvo": "u3",  # Missing from submitted claims
                 "vl_pago": 150.0,
                 "vl_info": 200.0,
                 "ingested_at": submitted_ingested_at_str,
@@ -324,21 +324,21 @@ def test_handle_queries_and_emits_metrics(
             partner="porto",
             values=[
                 {
-                  "status": "RETRY",
-                  "perc_pago": 0.25,
-                  "perc_info": 0.25,
+                    "status": "RETRY",
+                    "perc_pago": 0.25,
+                    "perc_info": 0.25,
                 },
                 {
-                  "status": "SUBMITTED_ERROR",
-                  "perc_pago": 0.0625,
-                  "perc_info": 0.1,
+                    "status": "SUBMITTED_ERROR",
+                    "perc_pago": 0.0625,
+                    "perc_info": 0.1,
                 },
                 {
-                  "status": "SUBMITTED_SUCCESS",
-                  "perc_pago": 0.375,
-                  "perc_info": 0.3,
+                    "status": "SUBMITTED_SUCCESS",
+                    "perc_pago": 0.375,
+                    "perc_info": 0.3,
                 },
-            ]
+            ],
         )
 
         response = dispatch_event(event, [UnsentClaimsHandler])
@@ -384,7 +384,6 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
         three_days_before_str = (submitted_ingested_at - timedelta(days=3)).isoformat()
         # Recent ingested at (outside the range)
         five_minutes_after_str = (submitted_ingested_at + timedelta(minutes=5)).isoformat()
-
 
         processable_rows = [
             {
@@ -445,7 +444,7 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
                 "ingested_at": one_day_before_str,
             },
             {
-                "id_arvo": "u3", # Missing from submitted claims
+                "id_arvo": "u3",  # Missing from submitted claims
                 "vl_pago": 150.0,
                 "vl_info": 200.0,
                 "ingested_at": submitted_ingested_at_str,
@@ -517,11 +516,11 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
             partner="porto",
             values=[
                 {
-                  "status": "SUBMITTED_SUCCESS",
-                  "perc_pago": 0.0,
-                  "perc_info": 0.0,
+                    "status": "SUBMITTED_SUCCESS",
+                    "perc_pago": 0.0,
+                    "perc_info": 0.0,
                 },
-            ]
+            ],
         )
 
         response = dispatch_event(event, [UnsentClaimsHandler])
@@ -659,11 +658,11 @@ def test_handle_queries_and_emits_metrics_no_ingested_claims_to_submit(
             partner="porto",
             values=[
                 {
-                  "status": "SUBMITTED_SUCCESS",
-                  "perc_pago": 1.0,
-                  "perc_info": 1.0,
+                    "status": "SUBMITTED_SUCCESS",
+                    "perc_pago": 1.0,
+                    "perc_info": 1.0,
                 },
-            ]
+            ],
         )
 
         response = dispatch_event(event, [UnsentClaimsHandler])
