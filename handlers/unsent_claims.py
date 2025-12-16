@@ -16,7 +16,8 @@ class UnsentClaimsHandler(Handler):
     to list the claims in the processable_claims_output_table and unprocessable_claims_output_table
     that are not in the submitted_claims_output_table.
 
-    It then emits two metrics representing the sum of vl_pago and vl_info of unsent claims.
+    It then emits two metrics representing the percentage of vl_pago and vl_info of sent claims
+    over the total of ingested claims.
 
     To be considered unsent, besides being missing from the submitted_claims_output_table,
     the claim must have been ingested before the most recent submitted claim's `ingested_at`
