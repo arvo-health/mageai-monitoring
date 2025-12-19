@@ -100,9 +100,13 @@ class UnsentClaimsHandler(Handler):
         submission_run_id = variables.get("submission_run_id")
 
         if not processable_claims_historical_table:
-            raise HandlerBadRequestError("No 'processable_claims_historical_table' found in payload.")
+            raise HandlerBadRequestError(
+                "No 'processable_claims_historical_table' found in payload."
+            )
         if not unprocessable_claims_historical_table:
-            raise HandlerBadRequestError("No 'unprocessable_claims_historical_table' found in payload.")
+            raise HandlerBadRequestError(
+                "No 'unprocessable_claims_historical_table' found in payload."
+            )
         if not submitted_claims_output_table:
             raise HandlerBadRequestError("No 'submitted_claims_output_table' found in payload.")
         if not partner_value:
