@@ -226,7 +226,7 @@ class UnsentClaimsHandler(Handler):
             emit_gauge_metric(
                 monitoring_client=self.monitoring_client,
                 project_id=self.run_project_id,
-                name="claims/pipeline/claims/vl_informado/sent_over_recv_last_2_days",
+                name="claims/pipeline/claims/vl_info/sent_over_recv_last_2_days",
                 value=perc_info,
                 labels=labels,
                 timestamp=source_timestamp,

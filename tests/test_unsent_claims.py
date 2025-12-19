@@ -81,7 +81,7 @@ def _create_expected_metric_calls(
             mocker.call(
                 name=expected_project,
                 time_series=MetricMatcher(
-                    metric_type="claims/pipeline/claims/vl_informado/sent_over_recv_last_2_days",
+                    metric_type="claims/pipeline/claims/vl_info/sent_over_recv_last_2_days",
                     value=value["perc_info"],
                     labels={"partner": partner, "status": value["status"]},
                 ),
