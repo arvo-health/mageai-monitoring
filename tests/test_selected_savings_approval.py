@@ -352,4 +352,3 @@ def test_selected_savings_approval_handler_table_not_found(
 
     finally:
         bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
-

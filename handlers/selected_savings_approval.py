@@ -156,4 +156,3 @@ class SelectedSavingsApprovalHandler(Handler):
         except NotFound:
             # If table doesn't exist, don't emit any metrics
             return
-
