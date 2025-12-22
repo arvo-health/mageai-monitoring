@@ -141,9 +141,9 @@ class UnsentSavingsHandler(Handler):
         if twenty_minutes_ago.tzinfo is None:
             twenty_minutes_ago = twenty_minutes_ago.replace(tzinfo=UTC)
 
-        # Query 2: Get the denominator - sum of vl_glosa_arvo from all accepted savings
-        # within the time window (2 days lookback from latest_ingested_at)
-        accepted_savings_query = f"""
+        # Combined query: Get both the denominator (total accepted) and numerator
+        # (submitted by status) within the time window (2 days lookback from latest_ingested_at)
+        combined_query = f"""
         WITH submitted_timestamps AS (
           SELECT COALESCE(MAX(ingested_at), @fallback_timestamp) as latest_ingested_at
           FROM `{full_submitted_claims_output_table}`
@@ -153,76 +153,72 @@ class UnsentSavingsHandler(Handler):
           SELECT TIMESTAMP_SUB(latest_ingested_at, INTERVAL 2 DAY) as start_date,
             latest_ingested_at as end_date
           FROM submitted_timestamps
-        )
-        SELECT COALESCE(SUM(vl_glosa_arvo), 0) as total_accepted
-        FROM (
-          SELECT vl_glosa_arvo, ingested_at
-          FROM `{full_selected_savings_historical_table}`
-          CROSS JOIN date_range AS dr
-          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
-          UNION ALL
-          SELECT vl_glosa_arvo, ingested_at
-          FROM `{full_internal_validation_output_table}`
-          CROSS JOIN date_range AS dr
-          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
-            AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
-          UNION ALL
-          SELECT vl_glosa_arvo, ingested_at
-          FROM `{full_manual_validation_output_table}`
-          CROSS JOIN date_range AS dr
-          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
-            AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
-        )
-        """
-        accepted_savings_job_config = QueryJobConfig(
-            query_parameters=[
-                ScalarQueryParameter("submission_run_id", "STRING", submission_run_id),
-                ScalarQueryParameter("fallback_timestamp", "TIMESTAMP", twenty_minutes_ago),
-            ]
-        )
-        accepted_savings_job = self.bq_client.query(
-            accepted_savings_query, job_config=accepted_savings_job_config
-        )
-        accepted_savings_result = list(accepted_savings_job.result())
-        total_accepted = (
-            float(accepted_savings_result[0].total_accepted or 0.0)
-            if accepted_savings_result
-            else 0.0
-        )
-
-        # Query 3: Get the numerator - sum of vl_glosa_arvo from submitted_claims
-        # grouped by status, within the time window
-        submitted_savings_query = f"""
-        WITH submitted_timestamps AS (
-          SELECT COALESCE(MAX(ingested_at), @fallback_timestamp) as latest_ingested_at
-          FROM `{full_submitted_claims_output_table}`
-          WHERE submission_run_id = @submission_run_id
         ),
-        date_range AS (
-          SELECT TIMESTAMP_SUB(latest_ingested_at, INTERVAL 2 DAY) as start_date,
-            latest_ingested_at as end_date
-          FROM submitted_timestamps
+        accepted_savings AS (
+          SELECT COALESCE(SUM(vl_glosa_arvo), 0) as total_accepted
+          FROM (
+            SELECT vl_glosa_arvo, ingested_at
+            FROM `{full_selected_savings_historical_table}`
+            CROSS JOIN date_range AS dr
+            WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
+            UNION ALL
+            SELECT vl_glosa_arvo, ingested_at
+            FROM `{full_internal_validation_output_table}`
+            CROSS JOIN date_range AS dr
+            WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
+              AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
+            UNION ALL
+            SELECT vl_glosa_arvo, ingested_at
+            FROM `{full_manual_validation_output_table}`
+            CROSS JOIN date_range AS dr
+            WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
+              AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
+          )
+        ),
+        submitted_savings_by_status AS (
+          SELECT status, COALESCE(SUM(vl_glosa_arvo), 0) as total_submitted
+          FROM `{full_submitted_claims_output_table}`
+          CROSS JOIN date_range AS dr
+          WHERE submission_run_id = @submission_run_id
+            AND ingested_at BETWEEN dr.start_date AND dr.end_date
+          GROUP BY status
+        ),
+        statuses AS (
+          SELECT status FROM submitted_savings_by_status
+          UNION DISTINCT
+          SELECT 'SUBMISSION_SUCCESS' as status
         )
-        SELECT status, COALESCE(SUM(vl_glosa_arvo), 0) as total_submitted
-        FROM `{full_submitted_claims_output_table}`
-        CROSS JOIN date_range AS dr
-        WHERE submission_run_id = @submission_run_id
-          AND ingested_at BETWEEN dr.start_date AND dr.end_date
-        GROUP BY status
+        SELECT
+          s.status,
+          COALESCE(ss.total_submitted, 0) as total_submitted,
+          ac.total_accepted
+        FROM statuses s
+        CROSS JOIN accepted_savings ac
+        LEFT JOIN submitted_savings_by_status ss ON s.status = ss.status
         """
-        submitted_savings_job_config = QueryJobConfig(
+        combined_job_config = QueryJobConfig(
             query_parameters=[
                 ScalarQueryParameter("submission_run_id", "STRING", submission_run_id),
                 ScalarQueryParameter("fallback_timestamp", "TIMESTAMP", twenty_minutes_ago),
             ]
         )
-        submitted_savings_job = self.bq_client.query(
-            submitted_savings_query, job_config=submitted_savings_job_config
-        )
-        submitted_savings_result = list(submitted_savings_job.result())
+        combined_job = self.bq_client.query(combined_query, job_config=combined_job_config)
+        combined_result = list(combined_job.result())
 
-        # If denominator is 0, emit one metric point with value 1.0 and status=SUBMISSION_SUCCESS
-        if total_accepted is None or total_accepted == 0.0:
+        # Extract total_accepted from first row (same for all rows)
+        total_accepted = float(combined_result[0].total_accepted or 0.0) if combined_result else 0.0
+
+        # Create dictionary mapping status to total_submitted
+        submitted_by_status = {
+            row.status: float(row.total_submitted or 0.0) for row in combined_result
+        }
+
+        # Check if there are any submitted values (non-zero)
+        has_submitted_values = any(total > 0.0 for total in submitted_by_status.values())
+
+        # If denominator is 0 and there are no submitted values,
+        # emit only SUBMISSION_SUCCESS with value 1.0
+        if (total_accepted is None or total_accepted == 0.0) and not has_submitted_values:
             labels = {"partner": partner_value, "status": "SUBMISSION_SUCCESS"}
             emit_gauge_metric(
                 monitoring_client=self.monitoring_client,
@@ -236,17 +232,12 @@ class UnsentSavingsHandler(Handler):
 
         # Emit one metric per status
         # Ensure at least SUBMISSION_SUCCESS is present
-        statuses_seen = {row.status for row in submitted_savings_result}
-        if "SUBMISSION_SUCCESS" not in statuses_seen:
-            statuses_seen.add("SUBMISSION_SUCCESS")
+        statuses = set(submitted_by_status.keys())
+        if "SUBMISSION_SUCCESS" not in statuses:
+            statuses.add("SUBMISSION_SUCCESS")
 
-        for status in statuses_seen:
-            # Find the total for this status
-            total_for_status = 0.0
-            for row in submitted_savings_result:
-                if row.status == status:
-                    total_for_status = float(row.total_submitted or 0.0)
-                    break
+        for status in statuses:
+            total_for_status = submitted_by_status.get(status, 0.0)
 
             # Calculate percentage
             perc = total_for_status / total_accepted if total_accepted > 0 else 0.0
