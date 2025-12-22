@@ -1,8 +1,9 @@
 """Handler for calculating and emitting unsent savings metrics."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from google.cloud import bigquery, monitoring_v3
+from google.cloud.bigquery import QueryJobConfig, ScalarQueryParameter
 
 from handlers.base import Handler, HandlerBadRequestError
 from metrics import emit_gauge_metric
@@ -135,32 +136,23 @@ class UnsentSavingsHandler(Handler):
         )
 
         # The fallback timestamp if there are no submitted claims for the submission_run_id
-        twenty_minutes_ago_str = (source_timestamp - timedelta(minutes=20)).isoformat()
-
-        # Query 1: Get the latest ingested_at timestamp for the submission_run_id
-        # This determines the time window ceiling
-        # Use FORMAT_TIMESTAMP to get ISO format string that TIMESTAMP() can parse
-        time_window_query = f"""
-        SELECT FORMAT_TIMESTAMP('%Y-%m-%d %H:%M:%S',
-          COALESCE(MAX(ingested_at), TIMESTAMP '{twenty_minutes_ago_str}')
-        ) as latest_ingested_at_str
-        FROM `{full_submitted_claims_output_table}`
-        WHERE submission_run_id = '{submission_run_id}'
-        """
-        time_window_job = self.bq_client.query(time_window_query)
-        time_window_result = list(time_window_job.result())
-        latest_ingested_at_str = (
-            time_window_result[0].latest_ingested_at_str
-            if time_window_result and time_window_result[0].latest_ingested_at_str
-            else twenty_minutes_ago_str
-        )
+        twenty_minutes_ago = source_timestamp - timedelta(minutes=20)
+        # Ensure timezone-aware (UTC)
+        if twenty_minutes_ago.tzinfo is None:
+            twenty_minutes_ago = twenty_minutes_ago.replace(tzinfo=UTC)
 
         # Query 2: Get the denominator - sum of vl_glosa_arvo from all accepted savings
         # within the time window (2 days lookback from latest_ingested_at)
         accepted_savings_query = f"""
-        WITH date_range AS (
-          SELECT TIMESTAMP_SUB(TIMESTAMP '{latest_ingested_at_str}', INTERVAL 2 DAY) as start_date,
-            TIMESTAMP '{latest_ingested_at_str}' as end_date
+        WITH submitted_timestamps AS (
+          SELECT COALESCE(MAX(ingested_at), @fallback_timestamp) as latest_ingested_at
+          FROM `{full_submitted_claims_output_table}`
+          WHERE submission_run_id = @submission_run_id
+        ),
+        date_range AS (
+          SELECT TIMESTAMP_SUB(latest_ingested_at, INTERVAL 2 DAY) as start_date,
+            latest_ingested_at as end_date
+          FROM submitted_timestamps
         )
         SELECT COALESCE(SUM(vl_glosa_arvo), 0) as total_accepted
         FROM (
@@ -182,7 +174,15 @@ class UnsentSavingsHandler(Handler):
             AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
         )
         """
-        accepted_savings_job = self.bq_client.query(accepted_savings_query)
+        accepted_savings_job_config = QueryJobConfig(
+            query_parameters=[
+                ScalarQueryParameter("submission_run_id", "STRING", submission_run_id),
+                ScalarQueryParameter("fallback_timestamp", "TIMESTAMP", twenty_minutes_ago),
+            ]
+        )
+        accepted_savings_job = self.bq_client.query(
+            accepted_savings_query, job_config=accepted_savings_job_config
+        )
         accepted_savings_result = list(accepted_savings_job.result())
         total_accepted = (
             float(accepted_savings_result[0].total_accepted or 0.0)
@@ -193,18 +193,32 @@ class UnsentSavingsHandler(Handler):
         # Query 3: Get the numerator - sum of vl_glosa_arvo from submitted_claims
         # grouped by status, within the time window
         submitted_savings_query = f"""
-        WITH date_range AS (
-          SELECT TIMESTAMP_SUB(TIMESTAMP '{latest_ingested_at_str}', INTERVAL 2 DAY) as start_date,
-            TIMESTAMP '{latest_ingested_at_str}' as end_date
+        WITH submitted_timestamps AS (
+          SELECT COALESCE(MAX(ingested_at), @fallback_timestamp) as latest_ingested_at
+          FROM `{full_submitted_claims_output_table}`
+          WHERE submission_run_id = @submission_run_id
+        ),
+        date_range AS (
+          SELECT TIMESTAMP_SUB(latest_ingested_at, INTERVAL 2 DAY) as start_date,
+            latest_ingested_at as end_date
+          FROM submitted_timestamps
         )
         SELECT status, COALESCE(SUM(vl_glosa_arvo), 0) as total_submitted
         FROM `{full_submitted_claims_output_table}`
         CROSS JOIN date_range AS dr
-        WHERE submission_run_id = '{submission_run_id}'
+        WHERE submission_run_id = @submission_run_id
           AND ingested_at BETWEEN dr.start_date AND dr.end_date
         GROUP BY status
         """
-        submitted_savings_job = self.bq_client.query(submitted_savings_query)
+        submitted_savings_job_config = QueryJobConfig(
+            query_parameters=[
+                ScalarQueryParameter("submission_run_id", "STRING", submission_run_id),
+                ScalarQueryParameter("fallback_timestamp", "TIMESTAMP", twenty_minutes_ago),
+            ]
+        )
+        submitted_savings_job = self.bq_client.query(
+            submitted_savings_query, job_config=submitted_savings_job_config
+        )
         submitted_savings_result = list(submitted_savings_job.result())
 
         # If denominator is 0, emit one metric point with value 1.0 and status=SUBMISSION_SUCCESS
