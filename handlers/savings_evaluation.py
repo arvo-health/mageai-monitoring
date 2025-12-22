@@ -1,6 +1,6 @@
-"""Handler for calculating and emitting savings metrics for approval pipeline.
+"""Handler for calculating and emitting savings metrics for evaluation pipeline.
 
-This handler processes completion events from the pipesv2_approval pipeline
+This handler processes completion events from the pipesv2_evaluation pipeline
 to compute aggregate metrics from savings results grouped by agent_id. It queries
 BigQuery to aggregate savings values and emits metrics that track the total
 value and count of savings per agent.
@@ -11,14 +11,14 @@ from google.cloud import bigquery, monitoring_v3
 from handlers.savings_base import SavingsBaseHandler
 
 
-class SavingsApprovalHandler(SavingsBaseHandler):
+class SavingsEvaluationHandler(SavingsBaseHandler):
     """
-    Calculates and emits metrics for savings grouped by agent_id from approval pipeline.
+    Calculates and emits metrics for savings grouped by agent_id from evaluation pipeline.
 
-    When the pipesv2_approval pipeline completes, this handler queries BigQuery
-    to aggregate savings values from the savings_input_table grouped by agent_id
+    When the pipesv2_evaluation pipeline completes, this handler queries BigQuery
+    to aggregate savings values from the savings_output_table grouped by agent_id
     and emits two metrics per agent_id: amount and count. This enables monitoring
-    of the financial impact of savings per agent during the approval pipeline execution.
+    of the financial impact of savings per agent during the evaluation pipeline execution.
     """
 
     def __init__(
@@ -43,21 +43,21 @@ class SavingsApprovalHandler(SavingsBaseHandler):
         """
         Determine if this handler should process the event.
 
-        Matches events representing successful completion of the pipesv2_approval
+        Matches events representing successful completion of the pipesv2_evaluation
         pipeline, which triggers the calculation of savings metrics per agent.
 
         Args:
             decoded_message: The decoded message dictionary to check
 
         Returns:
-            True if this is a pipesv2_approval pipeline completion event,
+            True if this is a pipesv2_evaluation pipeline completion event,
             False otherwise
         """
         payload = decoded_message.get("payload", {})
         pipeline_uuid = payload.get("pipeline_uuid")
         pipeline_status = payload.get("status")
 
-        return pipeline_uuid == "pipesv2_approval" and pipeline_status == "COMPLETED"
+        return pipeline_uuid == "pipesv2_evaluation" and pipeline_status == "COMPLETED"
 
     def handle(self, decoded_message: dict) -> None:
         """
@@ -72,12 +72,12 @@ class SavingsApprovalHandler(SavingsBaseHandler):
 
         Raises:
             HandlerBadRequestError: If the required input table variable
-                (savings_input_table) or partner variable are not present
+                (savings_output_table) or partner variable are not present
                 in the event
         """
         self._handle_savings_metrics(
             decoded_message=decoded_message,
-            pipeline_uuid="pipesv2_approval",
-            savings_table_var="savings_input_table",
-            approved_value="true",
+            pipeline_uuid="pipesv2_evaluation",
+            savings_table_var="savings_output_table",
+            approved_value="false",
         )

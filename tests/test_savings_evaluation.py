@@ -1,9 +1,9 @@
-"""Unit tests for SavingsApprovalHandler."""
+"""Unit tests for SavingsEvaluationHandler."""
 
 import pytest
 from pytest_mock import MockerFixture
 
-from handlers.savings_approval import SavingsApprovalHandler
+from handlers.savings_evaluation import SavingsEvaluationHandler
 
 
 @pytest.mark.parametrize(
@@ -12,7 +12,7 @@ from handlers.savings_approval import SavingsApprovalHandler
         (
             {
                 "payload": {
-                    "pipeline_uuid": "pipesv2_approval",
+                    "pipeline_uuid": "pipesv2_evaluation",
                     "status": "COMPLETED",
                 }
             },
@@ -21,7 +21,7 @@ from handlers.savings_approval import SavingsApprovalHandler
         (
             {
                 "payload": {
-                    "pipeline_uuid": "pipesv2_evaluation",
+                    "pipeline_uuid": "pipesv2_approval",
                     "status": "COMPLETED",
                 }
             },
@@ -30,7 +30,7 @@ from handlers.savings_approval import SavingsApprovalHandler
         (
             {
                 "payload": {
-                    "pipeline_uuid": "pipesv2_approval",
+                    "pipeline_uuid": "pipesv2_evaluation",
                     "status": "RUNNING",
                 }
             },
@@ -41,7 +41,7 @@ from handlers.savings_approval import SavingsApprovalHandler
 )
 def test_match(mocker: MockerFixture, decoded_message, expected):
     """Test that match returns the expected result for various message configurations."""
-    handler = SavingsApprovalHandler(
+    handler = SavingsEvaluationHandler(
         monitoring_client=mocker.MagicMock(),
         bq_client=mocker.MagicMock(),
         run_project_id="test-project",
@@ -53,7 +53,7 @@ def test_match(mocker: MockerFixture, decoded_message, expected):
 
 def test_handle_delegates_to_base(mocker: MockerFixture):
     """Test that handle delegates to _handle_savings_metrics with correct parameters."""
-    handler = SavingsApprovalHandler(
+    handler = SavingsEvaluationHandler(
         monitoring_client=mocker.MagicMock(),
         bq_client=mocker.MagicMock(),
         run_project_id="test-project",
@@ -63,11 +63,11 @@ def test_handle_delegates_to_base(mocker: MockerFixture):
     decoded_message = {
         "source_timestamp": "2024-01-15T10:30:00Z",
         "payload": {
-            "pipeline_uuid": "pipesv2_approval",
+            "pipeline_uuid": "pipesv2_evaluation",
             "status": "COMPLETED",
             "variables": {
-                "partner": "unimed_guarulhos",
-                "savings_input_table": "dataset.savings",
+                "partner": "cemig",
+                "savings_output_table": "dataset.savings",
             },
         },
     }
@@ -79,7 +79,7 @@ def test_handle_delegates_to_base(mocker: MockerFixture):
     # Verify it was called with the correct parameters
     mock_handle_savings_metrics.assert_called_once_with(
         decoded_message=decoded_message,
-        pipeline_uuid="pipesv2_approval",
-        savings_table_var="savings_input_table",
-        approved_value="true",
+        pipeline_uuid="pipesv2_evaluation",
+        savings_table_var="savings_output_table",
+        approved_value="false",
     )
