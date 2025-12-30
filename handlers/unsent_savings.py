@@ -25,11 +25,12 @@ class UnsentSavingsHandler(Handler):
     internal_validation_output_table (with status = 'SUBMITTED_SUCCESS' or 'APPROVED'),
     and manual_validation_output_table (with status = 'SUBMITTED_SUCCESS' or 'APPROVED').
 
-    Submitted savings are aggregated by status (SUBMISSION_ERROR, SUBMISSION_SUCCESS, RETRY)
-    from the submitted_claims table.
+    Submitted savings are aggregated by status (SUBMISSION_ERROR, SUBMITTED_SUCCESS, RETRY)
+    from the submitted_claims table, joined with accepted savings on id_arvo to only include
+    rows that match accepted savings.
 
     If there are no accepted savings (denominator is 0), emits one metric point with
-    value 1.0 and status=SUBMISSION_SUCCESS.
+    value 1.0 and status=SUBMITTED_SUCCESS.
     """
 
     def __init__(
@@ -155,45 +156,48 @@ class UnsentSavingsHandler(Handler):
           FROM submitted_timestamps
         ),
         accepted_savings AS (
+          SELECT id_arvo, vl_glosa_arvo, ingested_at
+          FROM `{full_selected_savings_historical_table}`
+          CROSS JOIN date_range AS dr
+          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
+          UNION ALL
+          SELECT id_arvo, vl_glosa_arvo, ingested_at
+          FROM `{full_internal_validation_output_table}`
+          CROSS JOIN date_range AS dr
+          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
+            AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
+          UNION ALL
+          SELECT id_arvo, vl_glosa_arvo, ingested_at
+          FROM `{full_manual_validation_output_table}`
+          CROSS JOIN date_range AS dr
+          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
+            AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
+        ),
+        accepted_savings_total AS (
           SELECT COALESCE(SUM(vl_glosa_arvo), 0) as total_accepted
-          FROM (
-            SELECT vl_glosa_arvo, ingested_at
-            FROM `{full_selected_savings_historical_table}`
-            CROSS JOIN date_range AS dr
-            WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
-            UNION ALL
-            SELECT vl_glosa_arvo, ingested_at
-            FROM `{full_internal_validation_output_table}`
-            CROSS JOIN date_range AS dr
-            WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
-              AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
-            UNION ALL
-            SELECT vl_glosa_arvo, ingested_at
-            FROM `{full_manual_validation_output_table}`
-            CROSS JOIN date_range AS dr
-            WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
-              AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
-          )
+          FROM accepted_savings
+        ),
+        accepted_savings_ids AS (
+          SELECT DISTINCT id_arvo
+          FROM accepted_savings
         ),
         submitted_savings_by_status AS (
-          SELECT status, COALESCE(SUM(vl_glosa_arvo), 0) as total_submitted
-          FROM `{full_submitted_claims_output_table}`
-          CROSS JOIN date_range AS dr
-          WHERE submission_run_id = @submission_run_id
-            AND ingested_at BETWEEN dr.start_date AND dr.end_date
-          GROUP BY status
+          SELECT s.status, COALESCE(SUM(s.vl_glosa_arvo), 0) as total_submitted
+          FROM `{full_submitted_claims_output_table}` s
+          INNER JOIN accepted_savings_ids asi ON s.id_arvo = asi.id_arvo
+          GROUP BY s.status
         ),
         statuses AS (
           SELECT status FROM submitted_savings_by_status
           UNION DISTINCT
-          SELECT 'SUBMISSION_SUCCESS' as status
+          SELECT 'SUBMITTED_SUCCESS' as status
         )
         SELECT
           s.status,
           COALESCE(ss.total_submitted, 0) as total_submitted,
           ac.total_accepted
         FROM statuses s
-        CROSS JOIN accepted_savings ac
+        CROSS JOIN accepted_savings_total ac
         LEFT JOIN submitted_savings_by_status ss ON s.status = ss.status
         """
         combined_job_config = QueryJobConfig(
@@ -217,9 +221,9 @@ class UnsentSavingsHandler(Handler):
         has_submitted_values = any(total > 0.0 for total in submitted_by_status.values())
 
         # If denominator is 0 and there are no submitted values,
-        # emit only SUBMISSION_SUCCESS with value 1.0
+        # emit only SUBMITTED_SUCCESS with value 1.0
         if (total_accepted is None or total_accepted == 0.0) and not has_submitted_values:
-            labels = {"partner": partner_value, "status": "SUBMISSION_SUCCESS"}
+            labels = {"partner": partner_value, "status": "SUBMITTED_SUCCESS"}
             emit_gauge_metric(
                 monitoring_client=self.monitoring_client,
                 project_id=self.run_project_id,
@@ -231,10 +235,10 @@ class UnsentSavingsHandler(Handler):
             return
 
         # Emit one metric per status
-        # Ensure at least SUBMISSION_SUCCESS is present
+        # Ensure at least SUBMITTED_SUCCESS is present
         statuses = set(submitted_by_status.keys())
-        if "SUBMISSION_SUCCESS" not in statuses:
-            statuses.add("SUBMISSION_SUCCESS")
+        if "SUBMITTED_SUCCESS" not in statuses:
+            statuses.add("SUBMITTED_SUCCESS")
 
         for status in statuses:
             total_for_status = submitted_by_status.get(status, 0.0)

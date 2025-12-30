@@ -87,11 +87,12 @@ def _create_expected_metric_calls(
 def create_savings_table_with_data(
     bigquery_client, dataset_id: str, table_id: str, rows: list[dict]
 ) -> None:
-    """Create a savings table with vl_glosa_arvo and ingested_at columns.
+    """Create a savings table with id_arvo, vl_glosa_arvo and ingested_at columns.
 
     Inserts test data into the created table.
     """
     schema = [
+        bigquery.SchemaField("id_arvo", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("vl_glosa_arvo", "FLOAT", mode="NULLABLE"),
         bigquery.SchemaField("ingested_at", "TIMESTAMP", mode="NULLABLE"),
     ]
@@ -103,11 +104,12 @@ def create_savings_table_with_data(
 def create_validation_table_with_data(
     bigquery_client, dataset_id: str, table_id: str, rows: list[dict]
 ) -> None:
-    """Create a validation table with vl_glosa_arvo, ingested_at, and status columns.
+    """Create a validation table with id_arvo, vl_glosa_arvo, ingested_at, and status columns.
 
     Inserts test data into the created table.
     """
     schema = [
+        bigquery.SchemaField("id_arvo", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("vl_glosa_arvo", "FLOAT", mode="NULLABLE"),
         bigquery.SchemaField("ingested_at", "TIMESTAMP", mode="NULLABLE"),
         bigquery.SchemaField("status", "STRING", mode="NULLABLE"),
@@ -120,12 +122,13 @@ def create_validation_table_with_data(
 def create_submitted_savings_table_with_data(
     bigquery_client, dataset_id: str, table_id: str, rows: list[dict]
 ) -> None:
-    """Create a submitted claims table with vl_glosa_arvo, ingested_at,
+    """Create a submitted claims table with id_arvo, vl_glosa_arvo, ingested_at,
     submission_run_id, and status columns.
 
     Inserts test data into the created table.
     """
     schema = [
+        bigquery.SchemaField("id_arvo", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("vl_glosa_arvo", "FLOAT", mode="NULLABLE"),
         bigquery.SchemaField("ingested_at", "TIMESTAMP", mode="NULLABLE"),
         bigquery.SchemaField("submission_run_id", "STRING", mode="NULLABLE"),
@@ -222,10 +225,12 @@ def test_handle_queries_and_emits_metrics(
         # manual REJECTED (50 - ignored)
         selected_savings_rows = [
             {
+                "id_arvo": "s1",
                 "vl_glosa_arvo": 1000.0,
                 "ingested_at": one_day_before_str,  # Within range
             },
             {
+                "id_arvo": "s2",
                 "vl_glosa_arvo": 2000.0,
                 "ingested_at": three_days_before_str,  # Outside range
             },
@@ -233,16 +238,19 @@ def test_handle_queries_and_emits_metrics(
 
         internal_validation_rows = [
             {
+                "id_arvo": "i1",
                 "vl_glosa_arvo": 500.0,
                 "ingested_at": one_day_before_str,
                 "status": "APPROVED",  # Accepted
             },
             {
+                "id_arvo": "i2",
                 "vl_glosa_arvo": 100.0,
                 "ingested_at": one_day_before_str,
                 "status": "REJECTED",  # Not accepted
             },
             {
+                "id_arvo": "i3",
                 "vl_glosa_arvo": 200.0,
                 "ingested_at": submitted_ingested_at_str,
                 "status": "SUBMITTED_SUCCESS",  # Accepted
@@ -251,11 +259,13 @@ def test_handle_queries_and_emits_metrics(
 
         manual_validation_rows = [
             {
+                "id_arvo": "m1",
                 "vl_glosa_arvo": 300.0,
                 "ingested_at": one_day_before_str,
                 "status": "SUBMITTED_SUCCESS",  # Accepted
             },
             {
+                "id_arvo": "m2",
                 "vl_glosa_arvo": 50.0,
                 "ingested_at": one_day_before_str,
                 "status": "REJECTED",  # Not accepted
@@ -267,24 +277,35 @@ def test_handle_queries_and_emits_metrics(
         # Total accepted = 1000 + 500 + 200 + 300 = 2000
         # Percentages: SUCCESS = 400/2000 = 0.2, ERROR = 200/2000 = 0.1,
         # RETRY = 100/2000 = 0.05
+        # Only rows with matching id_arvo from accepted_savings are included
         submitted_rows = [
             {
+                "id_arvo": "s1",  # Matches selected_savings
                 "vl_glosa_arvo": 400.0,
                 "ingested_at": one_day_before_str,
                 "submission_run_id": submission_run_id,
                 "status": "SUBMISSION_SUCCESS",
             },
             {
+                "id_arvo": "i1",  # Matches internal_validation
                 "vl_glosa_arvo": 200.0,
                 "ingested_at": one_day_before_str,
                 "submission_run_id": submission_run_id,
                 "status": "SUBMISSION_ERROR",
             },
             {
+                "id_arvo": "i3",  # Matches internal_validation
                 "vl_glosa_arvo": 100.0,
                 "ingested_at": submitted_ingested_at_str,
                 "submission_run_id": submission_run_id,
                 "status": "RETRY",
+            },
+            {
+                "id_arvo": "other",  # Not in accepted_savings, should be excluded
+                "vl_glosa_arvo": 999.0,
+                "ingested_at": one_day_before_str,
+                "submission_run_id": submission_run_id,
+                "status": "SUBMISSION_SUCCESS",
             },
         ]
 
@@ -352,7 +373,8 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
     dispatch_event,
 ):
     """Test that handle queries BigQuery and emits metrics when there are no submitted claims
-    for the submission_run_id, using the fallback timestamp."""
+    for the submission_run_id, using the fallback timestamp. Submitted claims from other runs
+    within the time window are included."""
 
     dataset_id = "test_dataset"
     selected_savings_table_id = "selected_savings"
@@ -377,6 +399,7 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
 
         selected_savings_rows = [
             {
+                "id_arvo": "s1",
                 "vl_glosa_arvo": 1000.0,
                 "ingested_at": one_day_before_str,  # Within range
             },
@@ -384,6 +407,7 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
 
         internal_validation_rows = [
             {
+                "id_arvo": "i1",
                 "vl_glosa_arvo": 500.0,
                 "ingested_at": one_day_before_str,
                 "status": "APPROVED",
@@ -392,6 +416,7 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
 
         manual_validation_rows = [
             {
+                "id_arvo": "m1",
                 "vl_glosa_arvo": 300.0,
                 "ingested_at": one_day_before_str,
                 "status": "SUBMITTED_SUCCESS",
@@ -399,11 +424,20 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
         ]
 
         # No submitted claims for submission_run_id, but there are for other runs
+        # Only rows with matching id_arvo from accepted_savings are included
         submitted_rows = [
             {
-                "vl_glosa_arvo": 100.0,
-                "ingested_at": three_days_before_str,
+                "id_arvo": "s1",  # Matches selected_savings
+                "vl_glosa_arvo": 200.0,
+                "ingested_at": one_day_before_str,  # Within range, different run
                 "submission_run_id": "run_A",  # Different run
+                "status": "SUBMISSION_SUCCESS",
+            },
+            {
+                "id_arvo": "other",  # Not in accepted_savings, should be excluded
+                "vl_glosa_arvo": 100.0,
+                "ingested_at": three_days_before_str,  # Outside range
+                "submission_run_id": "run_B",  # Different run
                 "status": "SUBMISSION_SUCCESS",
             },
         ]
@@ -434,14 +468,15 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
         )
 
         # Total accepted = 1000 + 500 + 300 = 1800
-        # No submitted claims for this run, so all percentages are 0
+        # Submitted from run_A (within time window) = 200
+        # Percentage = 200 / 1800 = 0.111...
         expected_calls = _create_expected_metric_calls(
             mocker,
             partner="porto",
             values=[
                 {
                     "status": "SUBMISSION_SUCCESS",
-                    "perc": 0.0,
+                    "perc": 200.0 / 1800.0,
                 },
             ],
         )
@@ -462,7 +497,7 @@ def test_handle_queries_and_emits_metrics_no_accepted_savings(
     mocker: MockerFixture,
     dispatch_event,
 ):
-    """Test that handle emits 1.0 for SUBMISSION_SUCCESS when there are no accepted savings
+    """Test that handle emits 1.0 for SUBMITTED_SUCCESS when there are no accepted savings
     (denominator is 0)."""
 
     dataset_id = "test_dataset"
@@ -487,6 +522,7 @@ def test_handle_queries_and_emits_metrics_no_accepted_savings(
         # All savings are outside the time window
         selected_savings_rows = [
             {
+                "id_arvo": "s1",
                 "vl_glosa_arvo": 1000.0,
                 "ingested_at": three_days_before_str,  # Outside range
             },
@@ -494,6 +530,7 @@ def test_handle_queries_and_emits_metrics_no_accepted_savings(
 
         internal_validation_rows = [
             {
+                "id_arvo": "i1",
                 "vl_glosa_arvo": 500.0,
                 "ingested_at": three_days_before_str,
                 "status": "APPROVED",
@@ -502,6 +539,7 @@ def test_handle_queries_and_emits_metrics_no_accepted_savings(
 
         manual_validation_rows = [
             {
+                "id_arvo": "m1",
                 "vl_glosa_arvo": 300.0,
                 "ingested_at": three_days_before_str,
                 "status": "SUBMITTED_SUCCESS",
@@ -509,8 +547,10 @@ def test_handle_queries_and_emits_metrics_no_accepted_savings(
         ]
 
         # No submitted rows for this submission_run_id to trigger fallback
+        # Since all accepted savings are outside the time window, no submitted rows will match
         submitted_rows = [
             {
+                "id_arvo": "s1",  # Matches selected_savings but it's outside time window
                 "vl_glosa_arvo": 100.0,
                 "ingested_at": three_days_before_str,
                 "submission_run_id": "run_OTHER",  # Different run_id to trigger fallback
@@ -543,13 +583,13 @@ def test_handle_queries_and_emits_metrics_no_accepted_savings(
             source_timestamp=source_timestamp,
         )
 
-        # No accepted savings in time window, so emit 1.0 for SUBMISSION_SUCCESS
+        # No accepted savings in time window, so emit 1.0 for SUBMITTED_SUCCESS
         expected_calls = _create_expected_metric_calls(
             mocker,
             partner="porto",
             values=[
                 {
-                    "status": "SUBMISSION_SUCCESS",
+                    "status": "SUBMITTED_SUCCESS",
                     "perc": 1.0,
                 },
             ],
