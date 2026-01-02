@@ -232,7 +232,7 @@ class NewBeneficiariesBaseHandler(Handler):
                     emit_gauge_metric(
                         monitoring_client=self.monitoring_client,
                         project_id=self.run_project_id,
-                        name="claims/beneficiaries/new_pct_3mo",
+                        name="claims/pipeline/beneficiaries/new_pct_last_3_mo",
                         value=new_pct,
                         labels=base_labels,
                         timestamp=source_timestamp,
@@ -243,7 +243,7 @@ class NewBeneficiariesBaseHandler(Handler):
                 emit_gauge_metric(
                     monitoring_client=self.monitoring_client,
                     project_id=self.run_project_id,
-                    name="claims/beneficiaries/new_pct_3mo",
+                    name="claims/pipeline/beneficiaries/new_pct_last_3_mo",
                     value=1.0,
                     labels=base_labels,
                     timestamp=source_timestamp,
