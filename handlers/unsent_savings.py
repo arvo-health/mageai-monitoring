@@ -1,0 +1,257 @@
+"""Handler for calculating and emitting unsent savings metrics."""
+
+from datetime import UTC, datetime, timedelta
+
+from google.cloud import bigquery, monitoring_v3
+from google.cloud.bigquery import QueryJobConfig, ScalarQueryParameter
+
+from handlers.base import Handler, HandlerBadRequestError
+from metrics import emit_gauge_metric
+
+
+class UnsentSavingsHandler(Handler):
+    """
+    Calculates and emits metrics for unsent savings.
+
+    When the pipesv2_submission pipeline completes, this handler queries BigQuery
+    to calculate the percentage of vl_glosa_arvo of submitted savings over the total
+    of accepted savings within the last 2 days.
+
+    To determine the time window, it uses the latest ingested_at timestamp from
+    submitted_claims matching the submission_run_id, or falls back to source_timestamp
+    minus 20 minutes if there are no submitted claims for the submission_run_id.
+
+    Accepted savings are fetched from selected_savings_historical_table,
+    internal_validation_output_table (with status = 'SUBMITTED_SUCCESS' or 'APPROVED'),
+    and manual_validation_output_table (with status = 'SUBMITTED_SUCCESS' or 'APPROVED').
+
+    Submitted savings are aggregated by status (SUBMISSION_ERROR, SUBMITTED_SUCCESS, RETRY)
+    from the submitted_claims table, joined with accepted savings on id_arvo to only include
+    rows that match accepted savings.
+
+    If there are no accepted savings (denominator is 0), emits one metric point with
+    value 1.0 and status=SUBMITTED_SUCCESS.
+    """
+
+    def __init__(
+        self,
+        monitoring_client: monitoring_v3.MetricServiceClient,
+        bq_client: bigquery.Client,
+        run_project_id: str,
+        data_project_id: str,
+    ):
+        """
+        Initialize the handler.
+
+        Args:
+            monitoring_client: Monitoring client (GCP or logged)
+            bq_client: BigQuery client
+            run_project_id: Project ID for metric emission
+            data_project_id: Project ID for BigQuery data
+        """
+
+        self.monitoring_client = monitoring_client
+        self.bq_client = bq_client
+        self.run_project_id = run_project_id
+        self.data_project_id = data_project_id
+
+    def match(self, decoded_message: dict) -> bool:
+        """
+        Determine if this handler should process the event.
+
+        Matches events representing successful completion of the pipesv2_submission
+        pipeline, which triggers the calculation of unsent savings metrics.
+
+        Args:
+            decoded_message: The decoded message dictionary to check
+
+        Returns:
+            True if this is a pipesv2_submission pipeline completion event,
+            False otherwise
+        """
+        payload = decoded_message.get("payload")
+
+        if not payload:
+            return False
+
+        pipeline_uuid = payload.get("pipeline_uuid")
+        pipeline_status = payload.get("status")
+
+        return pipeline_uuid == "pipesv2_submission" and pipeline_status == "COMPLETED"
+
+    def handle(self, decoded_message: dict) -> None:
+        """
+        Calculate unsent savings metrics and emit to Cloud Monitoring.
+
+        Queries BigQuery to calculate the percentage of vl_glosa_arvo of submitted
+        savings over the total of accepted savings within the last 2 days.
+
+        Args:
+            decoded_message: The decoded message dictionary containing pipeline completion data
+        """
+        payload = decoded_message.get("payload")
+
+        if not payload:
+            raise HandlerBadRequestError("No 'payload' found in event data.")
+
+        variables = payload.get("variables", {})
+
+        partner_value = variables.get("partner")
+        selected_savings_historical_table = variables.get("selected_savings_historical_table")
+        internal_validation_output_table = variables.get("internal_validation_output_table")
+        manual_validation_output_table = variables.get("manual_validation_output_table")
+        submitted_claims_output_table = variables.get("claims_submitted_output_table")
+        submission_run_id = variables.get("submission_run_id")
+
+        if not selected_savings_historical_table:
+            raise HandlerBadRequestError("No 'selected_savings_historical_table' found in payload.")
+        if not internal_validation_output_table:
+            raise HandlerBadRequestError("No 'internal_validation_output_table' found in payload.")
+        if not manual_validation_output_table:
+            raise HandlerBadRequestError("No 'manual_validation_output_table' found in payload.")
+        if not submitted_claims_output_table:
+            raise HandlerBadRequestError("No 'claims_submitted_output_table' found in payload.")
+        if not partner_value:
+            raise HandlerBadRequestError("Missing required 'partner' variable in payload.")
+        if not submission_run_id:
+            raise HandlerBadRequestError(
+                "Missing required 'submission_run_id' variable in payload."
+            )
+
+        # Ensure fully-qualified table paths
+        def ensure_full_table_ref(table: str) -> str:
+            return table if "." in table else f"{self.data_project_id}.{table}"
+
+        full_selected_savings_historical_table = ensure_full_table_ref(
+            selected_savings_historical_table
+        )
+        full_internal_validation_output_table = ensure_full_table_ref(
+            internal_validation_output_table
+        )
+        full_manual_validation_output_table = ensure_full_table_ref(manual_validation_output_table)
+        full_submitted_claims_output_table = ensure_full_table_ref(submitted_claims_output_table)
+
+        # Parse timestamp
+        source_timestamp = datetime.fromisoformat(
+            decoded_message["source_timestamp"].replace("Z", "+00:00")
+        )
+
+        # The fallback timestamp if there are no submitted claims for the submission_run_id
+        twenty_minutes_ago = source_timestamp - timedelta(minutes=20)
+        # Ensure timezone-aware (UTC)
+        if twenty_minutes_ago.tzinfo is None:
+            twenty_minutes_ago = twenty_minutes_ago.replace(tzinfo=UTC)
+
+        # Combined query: Get both the denominator (total accepted) and numerator
+        # (submitted by status) within the time window (2 days lookback from latest_ingested_at)
+        combined_query = f"""
+        WITH submitted_timestamps AS (
+          SELECT COALESCE(MAX(ingested_at), @fallback_timestamp) as latest_ingested_at
+          FROM `{full_submitted_claims_output_table}`
+          WHERE submission_run_id = @submission_run_id
+        ),
+        date_range AS (
+          SELECT TIMESTAMP_SUB(latest_ingested_at, INTERVAL 2 DAY) as start_date,
+            latest_ingested_at as end_date
+          FROM submitted_timestamps
+        ),
+        accepted_savings AS (
+          SELECT id_arvo, vl_glosa_arvo, ingested_at
+          FROM `{full_selected_savings_historical_table}`
+          CROSS JOIN date_range AS dr
+          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
+          UNION ALL
+          SELECT id_arvo, vl_glosa_arvo, ingested_at
+          FROM `{full_internal_validation_output_table}`
+          CROSS JOIN date_range AS dr
+          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
+            AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
+          UNION ALL
+          SELECT id_arvo, vl_glosa_arvo, ingested_at
+          FROM `{full_manual_validation_output_table}`
+          CROSS JOIN date_range AS dr
+          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
+            AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
+        ),
+        accepted_savings_total AS (
+          SELECT COALESCE(SUM(vl_glosa_arvo), 0) as total_accepted
+          FROM accepted_savings
+        ),
+        accepted_savings_ids AS (
+          SELECT DISTINCT id_arvo
+          FROM accepted_savings
+        ),
+        submitted_savings_by_status AS (
+          SELECT s.status, COALESCE(SUM(s.vl_glosa_arvo), 0) as total_submitted
+          FROM `{full_submitted_claims_output_table}` s
+          INNER JOIN accepted_savings_ids asi ON s.id_arvo = asi.id_arvo
+          GROUP BY s.status
+        ),
+        statuses AS (
+          SELECT status FROM submitted_savings_by_status
+          UNION DISTINCT
+          SELECT 'SUBMITTED_SUCCESS' as status
+        )
+        SELECT
+          s.status,
+          COALESCE(ss.total_submitted, 0) as total_submitted,
+          ac.total_accepted
+        FROM statuses s
+        CROSS JOIN accepted_savings_total ac
+        LEFT JOIN submitted_savings_by_status ss ON s.status = ss.status
+        """
+        combined_job_config = QueryJobConfig(
+            query_parameters=[
+                ScalarQueryParameter("submission_run_id", "STRING", submission_run_id),
+                ScalarQueryParameter("fallback_timestamp", "TIMESTAMP", twenty_minutes_ago),
+            ]
+        )
+        combined_job = self.bq_client.query(combined_query, job_config=combined_job_config)
+        combined_result = list(combined_job.result())
+
+        # Extract total_accepted from first row (same for all rows)
+        total_accepted = float(combined_result[0].total_accepted or 0.0) if combined_result else 0.0
+
+        # Create dictionary mapping status to total_submitted
+        submitted_by_status = {
+            row.status: float(row.total_submitted or 0.0) for row in combined_result
+        }
+
+        # Check if there are any submitted values (non-zero)
+        has_submitted_values = any(total > 0.0 for total in submitted_by_status.values())
+
+        # If denominator is 0 and there are no submitted values,
+        # emit only SUBMITTED_SUCCESS with value 1.0
+        if (total_accepted is None or total_accepted == 0.0) and not has_submitted_values:
+            labels = {"partner": partner_value, "status": "SUBMITTED_SUCCESS"}
+            emit_gauge_metric(
+                monitoring_client=self.monitoring_client,
+                project_id=self.run_project_id,
+                name="claims/pipeline/savings/vl_glosa_arvo/sent_over_accepted_last_2_days",
+                value=1.0,
+                labels=labels,
+                timestamp=source_timestamp,
+            )
+            return
+
+        # Emit one metric per status
+        # Ensure at least SUBMITTED_SUCCESS is present
+        statuses = set(submitted_by_status.keys())
+        if "SUBMITTED_SUCCESS" not in statuses:
+            statuses.add("SUBMITTED_SUCCESS")
+
+        for status in statuses:
+            total_for_status = submitted_by_status.get(status, 0.0)
+
+            # Calculate percentage
+            perc = total_for_status / total_accepted if total_accepted > 0 else 0.0
+
+            labels = {"partner": partner_value, "status": status}
+            emit_gauge_metric(
+                monitoring_client=self.monitoring_client,
+                project_id=self.run_project_id,
+                name="claims/pipeline/savings/vl_glosa_arvo/sent_over_accepted_last_2_days",
+                value=perc,
+                labels=labels,
+                timestamp=source_timestamp,
+            )
