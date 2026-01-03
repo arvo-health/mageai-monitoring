@@ -77,7 +77,7 @@ def _create_expected_metric_calls(
         mocker.call(
             name=expected_project,
             time_series=MetricMatcher(
-                metric_type="claims/pipeline/beneficiaries/new_pct_last_3_mo",
+                metric_type="claims/pipeline/providers/new_pct_last_3_mo",
                 value=value,
                 labels=expected_labels,
             ),
