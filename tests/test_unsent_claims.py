@@ -112,6 +112,7 @@ def create_claims_table_with_data(
     bigquery_client.create_table(table, exists_ok=True)
     bigquery_client.insert_rows_json(f"{bigquery_client.project}.{dataset_id}.{table_id}", rows)
 
+
 def create_internal_validation_table_with_data(
     bigquery_client, dataset_id: str, table_id: str, rows: list[dict]
 ) -> None:
@@ -128,6 +129,7 @@ def create_internal_validation_table_with_data(
     table = bigquery.Table(f"{bigquery_client.project}.{dataset_id}.{table_id}", schema=schema)
     bigquery_client.create_table(table, exists_ok=True)
     bigquery_client.insert_rows_json(f"{bigquery_client.project}.{dataset_id}.{table_id}", rows)
+
 
 def create_submitted_claims_table_with_data(
     bigquery_client, dataset_id: str, table_id: str, rows: list[dict]
