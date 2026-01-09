@@ -142,25 +142,25 @@ class UnsentClaimsHandler(Handler):
         # The fallback timestamp if there are no submitted claims for the submission_run_id
         twenty_minutes_ago_str = (source_timestamp - timedelta(minutes=20)).isoformat()
 
-        # Query to find claims that were ingested but not submitted
-        # Check the claims in the processable_claims_historical_table and
+        # Query to find items that were ingested but not submitted
+        # Check the items in the processable_claims_historical_table and
         # unprocessable_claims_historical_table that are not in the submitted_claims_output_table
         # and also follow the time constraints and pending validation constraints.
         # Time constraints:
-        # - The claims must have been ingested from before (or at the same time as) the most recent
-        #   submitted claim's `ingested_at` timestamp according to the submission_run_id
-        #   - If there are no submitted claims for the submission_run_id, the handler will use the
+        # - The items must have been ingested from before (or at the same time as) the most recent
+        #   submitted items' `ingested_at` timestamp according to the submission_run_id
+        #   - If there are no submitted items for the submission_run_id, the handler will use the
         #       source_timestamp minus 20 minutes as the fallback timestamp.
-        # - The claims must have been ingested within the last 2 days, from the latest ingested_at
+        # - The items must have been ingested within the last 2 days, from the latest ingested_at
         #   timestamp (real or fallback)
         # The filter by submission_run_id and the fallback are important because if there are no
-        # submitted claims associated with it, we don't want to get an older ingested_at timestamp
+        # submitted items associated with it, we don't want to get an older ingested_at timestamp
         # from another submission run, as it would give us a wrong time window.
         # Pending validation constraints:
-        # - If a claim is pending validation, excluded or expired, it is ignored
-        # - If a claim belongs to an invoice that has some claim pending validation, it is ignored
-        # Ignored here means that the claim is not considered for the calculations. It will not be
-        # counted as a claim that should have been sent.
+        # - If an item is pending validation, excluded or expired, it is ignored
+        # - If an item belongs to a claim that has some item pending validation, it is ignored
+        # Ignored here means that the item is not considered for the calculations. It will not be
+        # counted as an item that should have been sent.
         unsent_claims_query = f"""
         # Get the latest ingested_at timestamp for the submission_run_id
         WITH submitted_timestamps AS (
@@ -187,8 +187,8 @@ class UnsentClaimsHandler(Handler):
           CROSS JOIN date_range AS dr
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
         ),
-        # Get the ids of invoices that have claims pending validation
-        pending_invoices AS (
+        # Get the ids of claims that have items pending validation
+        pending_claims AS (
           SELECT id_fatura
           FROM `{full_internal_validation_output_table}`
           CROSS JOIN date_range AS dr
@@ -196,8 +196,8 @@ class UnsentClaimsHandler(Handler):
           GROUP BY id_fatura
           HAVING COUNT(CASE WHEN status = 'SENT_FOR_VALIDATION' THEN 1 END) > 0
         ),
-        # Get the "non-sendable" claims (pending validation, expired or excluded)
-        # Additionally, if the invoice is pending validation, all claims are non-sendable
+        # Get the "non-sendable" items (pending validation, expired or excluded)
+        # Additionally, if the claim is pending validation, all items are non-sendable
         non_sendable_claims AS (
           SELECT id_arvo
           FROM `{full_internal_validation_output_table}`
@@ -207,7 +207,7 @@ class UnsentClaimsHandler(Handler):
           UNION DISTINCT
           SELECT id_arvo
           FROM `{full_internal_validation_output_table}` iv
-          INNER JOIN pending_invoices pi ON iv.id_fatura = pi.id_fatura
+          INNER JOIN pending_claims pc ON iv.id_fatura = pc.id_fatura
           CROSS JOIN date_range AS dr
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
         ),
