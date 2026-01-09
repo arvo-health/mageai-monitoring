@@ -96,6 +96,7 @@ class UnsentClaimsHandler(Handler):
         unprocessable_claims_historical_table = variables.get(
             "unprocessable_claims_historical_table"
         )
+        internal_validation_output_table = variables.get("internal_validation_output_table")
         submitted_claims_output_table = variables.get("claims_submitted_output_table")
         submission_run_id = variables.get("submission_run_id")
 
@@ -107,6 +108,8 @@ class UnsentClaimsHandler(Handler):
             raise HandlerBadRequestError(
                 "No 'unprocessable_claims_historical_table' found in payload."
             )
+        if not internal_validation_output_table:
+            raise HandlerBadRequestError("No 'internal_validation_output_table' found in payload.")
         if not submitted_claims_output_table:
             raise HandlerBadRequestError("No 'submitted_claims_output_table' found in payload.")
         if not partner_value:
@@ -126,6 +129,9 @@ class UnsentClaimsHandler(Handler):
         full_unprocessable_claims_historical_table = ensure_full_table_ref(
             unprocessable_claims_historical_table
         )
+        full_internal_validation_output_table = ensure_full_table_ref(
+            internal_validation_output_table
+        )
         full_submitted_claims_output_table = ensure_full_table_ref(submitted_claims_output_table)
 
         # Parse timestamp
@@ -136,20 +142,25 @@ class UnsentClaimsHandler(Handler):
         # The fallback timestamp if there are no submitted claims for the submission_run_id
         twenty_minutes_ago_str = (source_timestamp - timedelta(minutes=20)).isoformat()
 
-        # Query to find claims that were ingested but not submitted
-        # Check the claims in the processable_claims_historical_table and
+        # Query to find items that were ingested but not submitted
+        # Check the items in the processable_claims_historical_table and
         # unprocessable_claims_historical_table that are not in the submitted_claims_output_table
-        # and also follow the time constraints.
+        # and also follow the time constraints and pending validation constraints.
         # Time constraints:
-        # - The claims must have been ingested from before (or at the same time as) the most recent
-        #   submitted claim's `ingested_at` timestamp according to the submission_run_id
-        #   - If there are no submitted claims for the submission_run_id, the handler will use the
+        # - The items must have been ingested from before (or at the same time as) the most recent
+        #   submitted items' `ingested_at` timestamp according to the submission_run_id
+        #   - If there are no submitted items for the submission_run_id, the handler will use the
         #       source_timestamp minus 20 minutes as the fallback timestamp.
-        # - The claims must have been ingested within the last 2 days, from the latest ingested_at
+        # - The items must have been ingested within the last 2 days, from the latest ingested_at
         #   timestamp (real or fallback)
         # The filter by submission_run_id and the fallback are important because if there are no
-        # submitted claims associated with it, we don't want to get an older ingested_at timestamp
+        # submitted items associated with it, we don't want to get an older ingested_at timestamp
         # from another submission run, as it would give us a wrong time window.
+        # Pending validation constraints:
+        # - If an item is pending validation, excluded or expired, it is ignored
+        # - If an item belongs to a claim that has some item pending validation, it is ignored
+        # Ignored here means that the item is not considered for the calculations. It will not be
+        # counted as an item that should have been sent.
         unsent_claims_query = f"""
         # Get the latest ingested_at timestamp for the submission_run_id
         WITH submitted_timestamps AS (
@@ -176,17 +187,48 @@ class UnsentClaimsHandler(Handler):
           CROSS JOIN date_range AS dr
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
         ),
-        # Get the total vl_pago and vl_info of the ingested claims
-        ingested_totals AS (
+        # Get the ids of claims that have items pending validation
+        pending_claims AS (
+          SELECT id_fatura
+          FROM `{full_internal_validation_output_table}`
+          CROSS JOIN date_range AS dr
+          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
+          GROUP BY id_fatura
+          HAVING COUNT(CASE WHEN status = 'SENT_FOR_VALIDATION' THEN 1 END) > 0
+        ),
+        # Get the "non-sendable" items (pending validation, expired or excluded)
+        # Additionally, if the claim is pending validation, all items are non-sendable
+        non_sendable_claims AS (
+          SELECT id_arvo
+          FROM `{full_internal_validation_output_table}`
+          CROSS JOIN date_range AS dr
+          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
+            AND status IN ('SENT_FOR_VALIDATION', 'EXPIRED', 'EXCLUDED')
+          UNION DISTINCT
+          SELECT id_arvo
+          FROM `{full_internal_validation_output_table}` iv
+          INNER JOIN pending_claims pc ON iv.id_fatura = pc.id_fatura
+          CROSS JOIN date_range AS dr
+          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
+        ),
+        # The ingested claims that are not in the non_sendable_claims are considered "sendable"
+        sendable_claims AS (
+          SELECT ic.id_arvo, ic.vl_pago, ic.vl_info
+          FROM ingested_claims ic
+          LEFT JOIN non_sendable_claims ns ON ic.id_arvo = ns.id_arvo
+          WHERE ns.id_arvo IS NULL
+        ),
+        # Get the total vl_pago and vl_info of the sendable claims
+        sendable_totals AS (
           SELECT sum(vl_pago) as total_pago, sum(vl_info) as total_info
-          FROM ingested_claims
+          FROM sendable_claims
         ),
         # Get the total vl_pago and vl_info of the submitted claims by status
         totals_by_status AS (
-          SELECT s.status, SUM(ic.vl_pago) as status_pago, SUM(ic.vl_info) as status_info
-          FROM `{full_submitted_claims_output_table}` s
-          INNER JOIN ingested_claims ic ON s.id_arvo = ic.id_arvo
-          GROUP BY s.status
+          SELECT sub.status, SUM(send.vl_pago) as status_pago, SUM(send.vl_info) as status_info
+          FROM `{full_submitted_claims_output_table}` sub
+          INNER JOIN sendable_claims send ON sub.id_arvo = send.id_arvo
+          GROUP BY sub.status
         ),
         # Get the statuses ensuring at least SUBMITTED_SUCCESS is present
         statuses AS (
@@ -198,17 +240,17 @@ class UnsentClaimsHandler(Handler):
         # If the total is 0 or NULL, we set the percentage to 1.0 (100%)
         # Otherwise, we calculate the ratio of the status values to the total values
         SELECT s.status,
-          CASE IFNULL(it.total_pago, 0)
+          CASE IFNULL(st.total_pago, 0)
             WHEN 0 THEN 1.0
-            ELSE COALESCE(SAFE_DIVIDE(tbs.status_pago, it.total_pago), 0)
+            ELSE COALESCE(SAFE_DIVIDE(tbs.status_pago, st.total_pago), 0)
           END AS perc_pago,
-          CASE IFNULL(it.total_info, 0)
+          CASE IFNULL(st.total_info, 0)
             WHEN 0 THEN 1.0
-            ELSE COALESCE(SAFE_DIVIDE(tbs.status_info, it.total_info), 0)
+            ELSE COALESCE(SAFE_DIVIDE(tbs.status_info, st.total_info), 0)
           END AS perc_info
         FROM statuses s
         LEFT JOIN totals_by_status tbs ON s.status = tbs.status
-        CROSS JOIN ingested_totals it
+        CROSS JOIN sendable_totals st
         """
         query_job = self.bq_client.query(unsent_claims_query)
         result = query_job.result()

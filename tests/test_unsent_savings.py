@@ -113,6 +113,7 @@ def create_validation_table_with_data(
         bigquery.SchemaField("vl_glosa_arvo", "FLOAT", mode="NULLABLE"),
         bigquery.SchemaField("ingested_at", "TIMESTAMP", mode="NULLABLE"),
         bigquery.SchemaField("status", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("id_fatura", "STRING", mode="NULLABLE"),
     ]
     table = bigquery.Table(f"{bigquery_client.project}.{dataset_id}.{table_id}", schema=schema)
     bigquery_client.create_table(table, exists_ok=True)
@@ -239,21 +240,38 @@ def test_handle_queries_and_emits_metrics(
         internal_validation_rows = [
             {
                 "id_arvo": "i1",
+                "id_fatura": "f1",
                 "vl_glosa_arvo": 500.0,
                 "ingested_at": one_day_before_str,
                 "status": "APPROVED",  # Accepted
             },
             {
                 "id_arvo": "i2",
+                "id_fatura": "f1",
                 "vl_glosa_arvo": 100.0,
                 "ingested_at": one_day_before_str,
                 "status": "REJECTED",  # Not accepted
             },
             {
                 "id_arvo": "i3",
+                "id_fatura": "f1",
                 "vl_glosa_arvo": 200.0,
                 "ingested_at": submitted_ingested_at_str,
                 "status": "SUBMITTED_SUCCESS",  # Accepted
+            },
+            {
+                "id_arvo": "i4",
+                "id_fatura": "f2",
+                "vl_glosa_arvo": 100.0,
+                "ingested_at": submitted_ingested_at_str,
+                "status": "SENT_FOR_VALIDATION",  # Not accepted
+            },
+            {
+                "id_arvo": "i5",
+                "id_fatura": "f2",
+                "vl_glosa_arvo": 100.0,
+                "ingested_at": submitted_ingested_at_str,
+                "status": "APPROVED",  # Not accepted (claim pending validation)
             },
         ]
 
