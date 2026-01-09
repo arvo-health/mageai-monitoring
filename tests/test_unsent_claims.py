@@ -19,6 +19,7 @@ def _create_cloud_event(
     partner: str,
     processable_table_id: str,
     unprocessable_table_id: str,
+    internal_validation_table_id: str,
     submitted_table_id: str,
     submission_run_id: str,
     source_timestamp: str,
@@ -35,6 +36,9 @@ def _create_cloud_event(
         ),
         "claims_submitted_output_table": (
             f"{bigquery_client.project}.{dataset_id}.{submitted_table_id}"
+        ),
+        "internal_validation_output_table": (
+            f"{bigquery_client.project}.{dataset_id}.{internal_validation_table_id}"
         ),
     }
 
@@ -108,6 +112,22 @@ def create_claims_table_with_data(
     bigquery_client.create_table(table, exists_ok=True)
     bigquery_client.insert_rows_json(f"{bigquery_client.project}.{dataset_id}.{table_id}", rows)
 
+def create_internal_validation_table_with_data(
+    bigquery_client, dataset_id: str, table_id: str, rows: list[dict]
+) -> None:
+    """Create an internal validation table with id_arvo, ingested_at, and status columns.
+
+    Inserts test data into the created table.
+    """
+    schema = [
+        bigquery.SchemaField("id_arvo", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("id_fatura", "STRING", mode="NULLABLE"),
+        bigquery.SchemaField("ingested_at", "TIMESTAMP", mode="NULLABLE"),
+        bigquery.SchemaField("status", "STRING", mode="NULLABLE"),
+    ]
+    table = bigquery.Table(f"{bigquery_client.project}.{dataset_id}.{table_id}", schema=schema)
+    bigquery_client.create_table(table, exists_ok=True)
+    bigquery_client.insert_rows_json(f"{bigquery_client.project}.{dataset_id}.{table_id}", rows)
 
 def create_submitted_claims_table_with_data(
     bigquery_client, dataset_id: str, table_id: str, rows: list[dict]
@@ -186,6 +206,7 @@ def test_handle_queries_and_emits_metrics(
     dataset_id = "test_dataset"
     processable_table_id = "processable_claims"
     unprocessable_table_id = "unprocessable_claims"
+    internal_validation_table_id = "internal_validation"
     submitted_table_id = "submitted_claims"
     submission_run_id = "run_X"
     source_timestamp = "2024-01-15T10:30:00Z"
@@ -210,7 +231,7 @@ def test_handle_queries_and_emits_metrics(
                 "id_arvo": "p1",
                 "vl_pago": 1000.0,
                 "vl_info": 1000.0,
-                "ingested_at": three_days_before_str,  # Ignored
+                "ingested_at": three_days_before_str,  # Ignored (date range)
             },
             {
                 "id_arvo": "p2",  # Missing from submitted claims
@@ -237,16 +258,28 @@ def test_handle_queries_and_emits_metrics(
                 "ingested_at": submitted_ingested_at_str,
             },
             {
-                "id_arvo": "p6",
-                "vl_pago": 1000.0,
-                "vl_info": 1000.0,
-                "ingested_at": five_minutes_after_str,  # Ignored
+                "id_arvo": "p6",  # Ignored (claim pending validation)
+                "vl_pago": 550.0,
+                "vl_info": 450.0,
+                "ingested_at": submitted_ingested_at_str,
             },
             {
-                "id_arvo": "p7",
+                "id_arvo": "p7",  # Ignored (invoice pending validation)
+                "vl_pago": 550.0,
+                "vl_info": 450.0,
+                "ingested_at": submitted_ingested_at_str,
+            },
+            {
+                "id_arvo": "p8",
                 "vl_pago": 1000.0,
                 "vl_info": 1000.0,
-                "ingested_at": five_minutes_after_str,  # Ignored
+                "ingested_at": five_minutes_after_str,  # Ignored (date range)
+            },
+            {
+                "id_arvo": "p9",
+                "vl_pago": 1000.0,
+                "vl_info": 1000.0,
+                "ingested_at": five_minutes_after_str,  # Ignored (date range)
             },
         ]
 
@@ -255,7 +288,7 @@ def test_handle_queries_and_emits_metrics(
                 "id_arvo": "u1",
                 "vl_pago": 1000.0,
                 "vl_info": 1000.0,
-                "ingested_at": three_days_before_str,  # Ignored
+                "ingested_at": three_days_before_str,  # Ignored (date range)
             },
             {
                 "id_arvo": "u2",
@@ -273,7 +306,7 @@ def test_handle_queries_and_emits_metrics(
                 "id_arvo": "u4",
                 "vl_pago": 1000.0,
                 "vl_info": 1000.0,
-                "ingested_at": five_minutes_after_str,  # Ignored
+                "ingested_at": five_minutes_after_str,  # Ignored (date range)
             },
         ]
 
@@ -298,6 +331,33 @@ def test_handle_queries_and_emits_metrics(
             },
         ]
 
+        internal_validation_rows = [
+            {
+                "id_arvo": "p4",
+                "ingested_at": submitted_ingested_at_str,
+                "id_fatura": "f1",
+                "status": "DENIED",
+            },
+            {
+                "id_arvo": "p5",
+                "ingested_at": submitted_ingested_at_str,
+                "id_fatura": "f1",
+                "status": "APPROVED",
+            },
+            {
+                "id_arvo": "p6",
+                "ingested_at": submitted_ingested_at_str,
+                "id_fatura": "f2",
+                "status": "SENT_FOR_VALIDATION",
+            },
+            {
+                "id_arvo": "p7",
+                "ingested_at": submitted_ingested_at_str,
+                "id_fatura": "f2",
+                "status": "APPROVED",
+            },
+        ]
+
         create_claims_table_with_data(
             bigquery_client, dataset_id, processable_table_id, rows=processable_rows
         )
@@ -307,6 +367,9 @@ def test_handle_queries_and_emits_metrics(
         create_submitted_claims_table_with_data(
             bigquery_client, dataset_id, submitted_table_id, rows=submitted_rows
         )
+        create_internal_validation_table_with_data(
+            bigquery_client, dataset_id, internal_validation_table_id, rows=internal_validation_rows
+        )
 
         event = _create_cloud_event(
             bigquery_client=bigquery_client,
@@ -314,6 +377,7 @@ def test_handle_queries_and_emits_metrics(
             partner="porto",
             processable_table_id=processable_table_id,
             unprocessable_table_id=unprocessable_table_id,
+            internal_validation_table_id=internal_validation_table_id,
             submitted_table_id=submitted_table_id,
             submission_run_id=submission_run_id,
             source_timestamp=source_timestamp,
@@ -366,6 +430,7 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
     dataset_id = "test_dataset"
     processable_table_id = "processable_claims"
     unprocessable_table_id = "unprocessable_claims"
+    internal_validation_table_id = "internal_validation"
     submitted_table_id = "submitted_claims"
     submission_run_id = "run_X"
     source_timestamp = "2024-01-15T10:30:00Z"
@@ -499,6 +564,9 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
         create_submitted_claims_table_with_data(
             bigquery_client, dataset_id, submitted_table_id, rows=submitted_rows
         )
+        create_internal_validation_table_with_data(
+            bigquery_client, dataset_id, internal_validation_table_id, rows=[]
+        )
 
         event = _create_cloud_event(
             bigquery_client=bigquery_client,
@@ -506,6 +574,7 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
             partner="porto",
             processable_table_id=processable_table_id,
             unprocessable_table_id=unprocessable_table_id,
+            internal_validation_table_id=internal_validation_table_id,
             submitted_table_id=submitted_table_id,
             submission_run_id=submission_run_id,
             source_timestamp=source_timestamp,
@@ -548,6 +617,7 @@ def test_handle_queries_and_emits_metrics_no_ingested_claims_to_submit(
     dataset_id = "test_dataset"
     processable_table_id = "processable_claims"
     unprocessable_table_id = "unprocessable_claims"
+    internal_validation_table_id = "internal_validation"
     submitted_table_id = "submitted_claims"
     submission_run_id = "run_X"
     source_timestamp = "2024-01-15T10:30:00Z"
@@ -641,6 +711,9 @@ def test_handle_queries_and_emits_metrics_no_ingested_claims_to_submit(
         create_submitted_claims_table_with_data(
             bigquery_client, dataset_id, submitted_table_id, rows=submitted_rows
         )
+        create_internal_validation_table_with_data(
+            bigquery_client, dataset_id, internal_validation_table_id, rows=[]
+        )
 
         event = _create_cloud_event(
             bigquery_client=bigquery_client,
@@ -648,6 +721,7 @@ def test_handle_queries_and_emits_metrics_no_ingested_claims_to_submit(
             partner="porto",
             processable_table_id=processable_table_id,
             unprocessable_table_id=unprocessable_table_id,
+            internal_validation_table_id=internal_validation_table_id,
             submitted_table_id=submitted_table_id,
             submission_run_id=submission_run_id,
             source_timestamp=source_timestamp,
