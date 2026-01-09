@@ -279,14 +279,30 @@ def test_handle_queries_and_emits_metrics(
             {
                 "id_arvo": "m1",
                 "vl_glosa_arvo": 300.0,
+                "id_fatura": "f3",
                 "ingested_at": one_day_before_str,
                 "status": "SUBMITTED_SUCCESS",  # Accepted
             },
             {
                 "id_arvo": "m2",
+                "id_fatura": "f3",
                 "vl_glosa_arvo": 50.0,
                 "ingested_at": one_day_before_str,
                 "status": "REJECTED",  # Not accepted
+            },
+            {
+                "id_arvo": "m3",
+                "id_fatura": "f4",
+                "vl_glosa_arvo": 100.0,
+                "ingested_at": submitted_ingested_at_str,
+                "status": "SENT_FOR_VALIDATION",  # Not accepted
+            },
+            {
+                "id_arvo": "m4",
+                "id_fatura": "f4",
+                "vl_glosa_arvo": 100.0,
+                "ingested_at": submitted_ingested_at_str,
+                "status": "APPROVED",  # Not accepted (claim pending validation)
             },
         ]
 

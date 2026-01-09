@@ -97,6 +97,7 @@ class UnsentClaimsHandler(Handler):
             "unprocessable_claims_historical_table"
         )
         internal_validation_output_table = variables.get("internal_validation_output_table")
+        manual_validation_output_table = variables.get("manual_validation_output_table")
         submitted_claims_output_table = variables.get("claims_submitted_output_table")
         submission_run_id = variables.get("submission_run_id")
 
@@ -110,6 +111,8 @@ class UnsentClaimsHandler(Handler):
             )
         if not internal_validation_output_table:
             raise HandlerBadRequestError("No 'internal_validation_output_table' found in payload.")
+        if not manual_validation_output_table:
+            raise HandlerBadRequestError("No 'manual_validation_output_table' found in payload.")
         if not submitted_claims_output_table:
             raise HandlerBadRequestError("No 'submitted_claims_output_table' found in payload.")
         if not partner_value:
@@ -132,6 +135,7 @@ class UnsentClaimsHandler(Handler):
         full_internal_validation_output_table = ensure_full_table_ref(
             internal_validation_output_table
         )
+        full_manual_validation_output_table = ensure_full_table_ref(manual_validation_output_table)
         full_submitted_claims_output_table = ensure_full_table_ref(submitted_claims_output_table)
 
         # Parse timestamp
@@ -157,7 +161,6 @@ class UnsentClaimsHandler(Handler):
         # submitted items associated with it, we don't want to get an older ingested_at timestamp
         # from another submission run, as it would give us a wrong time window.
         # Pending validation constraints:
-        # - If an item is pending validation, excluded or expired, it is ignored
         # - If an item belongs to a claim that has some item pending validation, it is ignored
         # Ignored here means that the item is not considered for the calculations. It will not be
         # counted as an item that should have been sent.
@@ -188,26 +191,32 @@ class UnsentClaimsHandler(Handler):
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
         ),
         # Get the ids of claims that have items pending validation
-        pending_claims AS (
+        pending_claim_ids AS (
           SELECT id_fatura
           FROM `{full_internal_validation_output_table}`
           CROSS JOIN date_range AS dr
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
           GROUP BY id_fatura
           HAVING COUNT(CASE WHEN status = 'SENT_FOR_VALIDATION' THEN 1 END) > 0
-        ),
-        # Get the "non-sendable" items (pending validation, expired or excluded)
-        # Additionally, if the claim is pending validation, all items are non-sendable
-        non_sendable_claims AS (
-          SELECT id_arvo
-          FROM `{full_internal_validation_output_table}`
+          UNION DISTINCT
+          SELECT id_fatura
+          FROM `{full_manual_validation_output_table}`
           CROSS JOIN date_range AS dr
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
-            AND status IN ('SENT_FOR_VALIDATION', 'EXPIRED', 'EXCLUDED')
-          UNION DISTINCT
+          GROUP BY id_fatura
+          HAVING COUNT(CASE WHEN status = 'SENT_FOR_VALIDATION' THEN 1 END) > 0
+        ),
+        # Get the "non-sendable" items (from claims pending validation)
+        non_sendable_claims AS (
           SELECT id_arvo
           FROM `{full_internal_validation_output_table}` iv
-          INNER JOIN pending_claims pc ON iv.id_fatura = pc.id_fatura
+          INNER JOIN pending_claim_ids pci ON iv.id_fatura = pci.id_fatura
+          CROSS JOIN date_range AS dr
+          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
+          UNION DISTINCT
+          SELECT id_arvo
+          FROM `{full_manual_validation_output_table}` mv
+          INNER JOIN pending_claim_ids pci ON mv.id_fatura = pci.id_fatura
           CROSS JOIN date_range AS dr
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
         ),

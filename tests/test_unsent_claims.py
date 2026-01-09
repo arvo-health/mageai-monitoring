@@ -20,6 +20,7 @@ def _create_cloud_event(
     processable_table_id: str,
     unprocessable_table_id: str,
     internal_validation_table_id: str,
+    manual_validation_table_id: str,
     submitted_table_id: str,
     submission_run_id: str,
     source_timestamp: str,
@@ -39,6 +40,9 @@ def _create_cloud_event(
         ),
         "internal_validation_output_table": (
             f"{bigquery_client.project}.{dataset_id}.{internal_validation_table_id}"
+        ),
+        "manual_validation_output_table": (
+            f"{bigquery_client.project}.{dataset_id}.{manual_validation_table_id}"
         ),
     }
 
@@ -113,7 +117,7 @@ def create_claims_table_with_data(
     bigquery_client.insert_rows_json(f"{bigquery_client.project}.{dataset_id}.{table_id}", rows)
 
 
-def create_internal_validation_table_with_data(
+def create_validation_table_with_data(
     bigquery_client, dataset_id: str, table_id: str, rows: list[dict]
 ) -> None:
     """Create an internal validation table with id_arvo, ingested_at, and status columns.
@@ -209,6 +213,7 @@ def test_handle_queries_and_emits_metrics(
     processable_table_id = "processable_claims"
     unprocessable_table_id = "unprocessable_claims"
     internal_validation_table_id = "internal_validation"
+    manual_validation_table_id = "manual_validation"
     submitted_table_id = "submitted_claims"
     submission_run_id = "run_X"
     source_timestamp = "2024-01-15T10:30:00Z"
@@ -260,25 +265,37 @@ def test_handle_queries_and_emits_metrics(
                 "ingested_at": submitted_ingested_at_str,
             },
             {
-                "id_arvo": "p6",  # Ignored (item pending validation)
+                "id_arvo": "p6",  # Ignored (item pending validation [internal])
                 "vl_pago": 550.0,
                 "vl_info": 450.0,
                 "ingested_at": submitted_ingested_at_str,
             },
             {
-                "id_arvo": "p7",  # Ignored (claim pending validation)
+                "id_arvo": "p7",  # Ignored (claim pending validation [internal])
                 "vl_pago": 550.0,
                 "vl_info": 450.0,
                 "ingested_at": submitted_ingested_at_str,
             },
             {
-                "id_arvo": "p8",
+                "id_arvo": "p8",  # Ignored (item pending validation [manual])
+                "vl_pago": 225.0,
+                "vl_info": 175.0,
+                "ingested_at": submitted_ingested_at_str,
+            },
+            {
+                "id_arvo": "p9",  # Ignored (claim pending validation [manual])
+                "vl_pago": 225.0,
+                "vl_info": 175.0,
+                "ingested_at": submitted_ingested_at_str,
+            },
+            {
+                "id_arvo": "p10",
                 "vl_pago": 1000.0,
                 "vl_info": 1000.0,
                 "ingested_at": five_minutes_after_str,  # Ignored (date range)
             },
             {
-                "id_arvo": "p9",
+                "id_arvo": "p11",
                 "vl_pago": 1000.0,
                 "vl_info": 1000.0,
                 "ingested_at": five_minutes_after_str,  # Ignored (date range)
@@ -335,6 +352,12 @@ def test_handle_queries_and_emits_metrics(
 
         internal_validation_rows = [
             {
+                "id_arvo": "p3",
+                "ingested_at": one_day_before_str,
+                "id_fatura": "f0",
+                "status": "EXPIRED",
+            },
+            {
                 "id_arvo": "p4",
                 "ingested_at": submitted_ingested_at_str,
                 "id_fatura": "f1",
@@ -360,6 +383,21 @@ def test_handle_queries_and_emits_metrics(
             },
         ]
 
+        manual_validation_rows = [
+            {
+                "id_arvo": "p8",
+                "ingested_at": submitted_ingested_at_str,
+                "id_fatura": "f3",
+                "status": "SENT_FOR_VALIDATION",
+            },
+            {
+                "id_arvo": "p9",
+                "ingested_at": submitted_ingested_at_str,
+                "id_fatura": "f3",
+                "status": "APPROVED",
+            },
+        ]
+
         create_claims_table_with_data(
             bigquery_client, dataset_id, processable_table_id, rows=processable_rows
         )
@@ -369,8 +407,11 @@ def test_handle_queries_and_emits_metrics(
         create_submitted_claims_table_with_data(
             bigquery_client, dataset_id, submitted_table_id, rows=submitted_rows
         )
-        create_internal_validation_table_with_data(
+        create_validation_table_with_data(
             bigquery_client, dataset_id, internal_validation_table_id, rows=internal_validation_rows
+        )
+        create_validation_table_with_data(
+            bigquery_client, dataset_id, manual_validation_table_id, rows=manual_validation_rows
         )
 
         event = _create_cloud_event(
@@ -380,6 +421,7 @@ def test_handle_queries_and_emits_metrics(
             processable_table_id=processable_table_id,
             unprocessable_table_id=unprocessable_table_id,
             internal_validation_table_id=internal_validation_table_id,
+            manual_validation_table_id=manual_validation_table_id,
             submitted_table_id=submitted_table_id,
             submission_run_id=submission_run_id,
             source_timestamp=source_timestamp,
@@ -433,6 +475,7 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
     processable_table_id = "processable_claims"
     unprocessable_table_id = "unprocessable_claims"
     internal_validation_table_id = "internal_validation"
+    manual_validation_table_id = "manual_validation"
     submitted_table_id = "submitted_claims"
     submission_run_id = "run_X"
     source_timestamp = "2024-01-15T10:30:00Z"
@@ -566,8 +609,11 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
         create_submitted_claims_table_with_data(
             bigquery_client, dataset_id, submitted_table_id, rows=submitted_rows
         )
-        create_internal_validation_table_with_data(
+        create_validation_table_with_data(
             bigquery_client, dataset_id, internal_validation_table_id, rows=[]
+        )
+        create_validation_table_with_data(
+            bigquery_client, dataset_id, manual_validation_table_id, rows=[]
         )
 
         event = _create_cloud_event(
@@ -577,6 +623,7 @@ def test_handle_queries_and_emits_metrics_no_submitted_claims(
             processable_table_id=processable_table_id,
             unprocessable_table_id=unprocessable_table_id,
             internal_validation_table_id=internal_validation_table_id,
+            manual_validation_table_id=manual_validation_table_id,
             submitted_table_id=submitted_table_id,
             submission_run_id=submission_run_id,
             source_timestamp=source_timestamp,
@@ -620,6 +667,7 @@ def test_handle_queries_and_emits_metrics_no_ingested_claims_to_submit(
     processable_table_id = "processable_claims"
     unprocessable_table_id = "unprocessable_claims"
     internal_validation_table_id = "internal_validation"
+    manual_validation_table_id = "manual_validation"
     submitted_table_id = "submitted_claims"
     submission_run_id = "run_X"
     source_timestamp = "2024-01-15T10:30:00Z"
@@ -713,8 +761,11 @@ def test_handle_queries_and_emits_metrics_no_ingested_claims_to_submit(
         create_submitted_claims_table_with_data(
             bigquery_client, dataset_id, submitted_table_id, rows=submitted_rows
         )
-        create_internal_validation_table_with_data(
+        create_validation_table_with_data(
             bigquery_client, dataset_id, internal_validation_table_id, rows=[]
+        )
+        create_validation_table_with_data(
+            bigquery_client, dataset_id, manual_validation_table_id, rows=[]
         )
 
         event = _create_cloud_event(
@@ -724,6 +775,7 @@ def test_handle_queries_and_emits_metrics_no_ingested_claims_to_submit(
             processable_table_id=processable_table_id,
             unprocessable_table_id=unprocessable_table_id,
             internal_validation_table_id=internal_validation_table_id,
+            manual_validation_table_id=manual_validation_table_id,
             submitted_table_id=submitted_table_id,
             submission_run_id=submission_run_id,
             source_timestamp=source_timestamp,

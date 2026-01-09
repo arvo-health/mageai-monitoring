@@ -155,9 +155,16 @@ class UnsentSavingsHandler(Handler):
             latest_ingested_at as end_date
           FROM submitted_timestamps
         ),
-        pending_claims AS (
+        pending_claim_ids AS (
           SELECT id_fatura
           FROM `{full_internal_validation_output_table}`
+          CROSS JOIN date_range AS dr
+          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
+          GROUP BY id_fatura
+          HAVING COUNT(CASE WHEN status = 'SENT_FOR_VALIDATION' THEN 1 END) > 0
+          UNION DISTINCT
+          SELECT id_fatura
+          FROM `{full_manual_validation_output_table}`
           CROSS JOIN date_range AS dr
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
           GROUP BY id_fatura
@@ -172,16 +179,18 @@ class UnsentSavingsHandler(Handler):
           SELECT id_arvo, vl_glosa_arvo, ingested_at
           FROM `{full_internal_validation_output_table}` iv
           CROSS JOIN date_range AS dr
-          LEFT JOIN pending_claims pc ON iv.id_fatura = pc.id_fatura
+          LEFT JOIN pending_claim_ids pci ON iv.id_fatura = pci.id_fatura
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
             AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
-            AND pc.id_fatura IS NULL
+            AND pci.id_fatura IS NULL
           UNION ALL
           SELECT id_arvo, vl_glosa_arvo, ingested_at
-          FROM `{full_manual_validation_output_table}`
+          FROM `{full_manual_validation_output_table}` mv
           CROSS JOIN date_range AS dr
+          LEFT JOIN pending_claim_ids pci ON mv.id_fatura = pci.id_fatura
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
             AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
+            AND pci.id_fatura IS NULL
         ),
         accepted_savings_total AS (
           SELECT COALESCE(SUM(vl_glosa_arvo), 0) as total_accepted
