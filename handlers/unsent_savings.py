@@ -155,7 +155,7 @@ class UnsentSavingsHandler(Handler):
             latest_ingested_at as end_date
           FROM submitted_timestamps
         ),
-        pending_invoices AS (
+        pending_claims AS (
           SELECT id_fatura
           FROM `{full_internal_validation_output_table}`
           CROSS JOIN date_range AS dr
@@ -172,10 +172,10 @@ class UnsentSavingsHandler(Handler):
           SELECT id_arvo, vl_glosa_arvo, ingested_at
           FROM `{full_internal_validation_output_table}` iv
           CROSS JOIN date_range AS dr
-          LEFT JOIN pending_invoices pi ON iv.id_fatura = pi.id_fatura
+          LEFT JOIN pending_claims pc ON iv.id_fatura = pc.id_fatura
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
             AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
-            AND pi.id_fatura IS NULL
+            AND pc.id_fatura IS NULL
           UNION ALL
           SELECT id_arvo, vl_glosa_arvo, ingested_at
           FROM `{full_manual_validation_output_table}`
