@@ -271,7 +271,7 @@ def test_handle_queries_and_emits_metrics(
                 "id_fatura": "f2",
                 "vl_glosa_arvo": 100.0,
                 "ingested_at": submitted_ingested_at_str,
-                "status": "APPROVED",  # Not accepted (invoice pending validation)
+                "status": "APPROVED",  # Not accepted (claim pending validation)
             },
         ]
 

@@ -260,13 +260,13 @@ def test_handle_queries_and_emits_metrics(
                 "ingested_at": submitted_ingested_at_str,
             },
             {
-                "id_arvo": "p6",  # Ignored (claim pending validation)
+                "id_arvo": "p6",  # Ignored (item pending validation)
                 "vl_pago": 550.0,
                 "vl_info": 450.0,
                 "ingested_at": submitted_ingested_at_str,
             },
             {
-                "id_arvo": "p7",  # Ignored (invoice pending validation)
+                "id_arvo": "p7",  # Ignored (claim pending validation)
                 "vl_pago": 550.0,
                 "vl_info": 450.0,
                 "ingested_at": submitted_ingested_at_str,
