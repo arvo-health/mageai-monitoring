@@ -395,7 +395,7 @@ def test_handle_queries_and_emits_metrics(
                 "ingested_at": submitted_ingested_at_str,
                 "id_fatura": "f3",
                 "status": "APPROVED",
-            }
+            },
         ]
 
         create_claims_table_with_data(
