@@ -23,6 +23,7 @@ from handlers.processable_wrangling import ProcessableWranglingHandler
 from handlers.savings_approval import SavingsApprovalHandler
 from handlers.savings_evaluation import SavingsEvaluationHandler
 from handlers.selected_savings_approval import SelectedSavingsApprovalHandler
+from handlers.expired_validation_claims import ExpiredValidationClaimsHandler
 from handlers.unsent_claims import UnsentClaimsHandler
 from handlers.unsent_savings import UnsentSavingsHandler
 from metrics import create_monitoring_client
@@ -136,6 +137,12 @@ def create_handlers(
             data_project_id=config.bigquery_project_id,
         ),
         UnsentSavingsHandler(
+            monitoring_client=monitoring_client,
+            bq_client=bq_client,
+            run_project_id=config.cloud_run_project_id,
+            data_project_id=config.bigquery_project_id,
+        ),
+        ExpiredValidationClaimsHandler(
             monitoring_client=monitoring_client,
             bq_client=bq_client,
             run_project_id=config.cloud_run_project_id,
