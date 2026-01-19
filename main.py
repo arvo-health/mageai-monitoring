@@ -9,6 +9,7 @@ from flask import make_response
 from bigquery import create_bigquery_client
 from config import Config
 from dispatcher import HandlerDispatcher
+from handlers.expired_validation_claims import ExpiredValidationClaimsHandler
 from handlers.new_beneficiaries_approval import NewBeneficiariesApprovalHandler
 from handlers.new_beneficiaries_wrangling import NewBeneficiariesWranglingHandler
 from handlers.new_providers_approval import NewProvidersApprovalHandler
@@ -136,6 +137,12 @@ def create_handlers(
             data_project_id=config.bigquery_project_id,
         ),
         UnsentSavingsHandler(
+            monitoring_client=monitoring_client,
+            bq_client=bq_client,
+            run_project_id=config.cloud_run_project_id,
+            data_project_id=config.bigquery_project_id,
+        ),
+        ExpiredValidationClaimsHandler(
             monitoring_client=monitoring_client,
             bq_client=bq_client,
             run_project_id=config.cloud_run_project_id,
