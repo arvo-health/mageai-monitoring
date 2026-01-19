@@ -156,8 +156,8 @@ class ExpiredValidationClaimsHandler(Handler):
         WHERE
             ingested_at >= TIMESTAMP_SUB(@source_timestamp, INTERVAL 2 DAY)
             AND ingested_at <= @source_timestamp
-            AND updated_at >= TIMESTAMP_SUB(@source_timestamp, INTERVAL 30 MINUTE)
-            AND updated_at <= @source_timestamp
+            AND updated_at >= DATETIME_SUB(DATETIME(@source_timestamp), INTERVAL 30 MINUTE)
+            AND updated_at <= DATETIME(@source_timestamp)
             AND status = 'EXPIRED'
         """
 
