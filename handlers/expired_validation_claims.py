@@ -20,9 +20,8 @@ class ExpiredValidationClaimsHandler(Handler):
     The query uses a 2-day partition filter on ingested_at and a 30-minute row filter
     on updated_at to optimize costs and focus on recently updated items.
 
-    Emits two metrics:
-    - claims/pipeline/validation/internal/vl_glosa_arvo/expired/total
-    - claims/pipeline/validation/manual/vl_glosa_arvo/expired/total
+    Emits metric:
+    - claims/pipeline/validation/vl_glosa_arvo/expired/total (sum of internal + manual)
     """
 
     def __init__(
@@ -114,24 +113,16 @@ class ExpiredValidationClaimsHandler(Handler):
             decoded_message["source_timestamp"].replace("Z", "+00:00")
         )
 
-        # Query and emit metric for internal validation claims
+        # Query both tables and emit combined metric
         internal_total = self._query_expired_sum(full_internal_validation_table, source_timestamp)
-        emit_gauge_metric(
-            monitoring_client=self.monitoring_client,
-            project_id=self.run_project_id,
-            name="claims/pipeline/validation/internal/vl_glosa_arvo/expired/total",
-            value=internal_total,
-            labels={"partner": partner_value},
-            timestamp=source_timestamp,
-        )
-
-        # Query and emit metric for manual validation claims
         manual_total = self._query_expired_sum(full_manual_validation_table, source_timestamp)
+
+        combined_total = internal_total + manual_total
         emit_gauge_metric(
             monitoring_client=self.monitoring_client,
             project_id=self.run_project_id,
-            name="claims/pipeline/validation/manual/vl_glosa_arvo/expired/total",
-            value=manual_total,
+            name="claims/pipeline/validation/vl_glosa_arvo/expired/total",
+            value=combined_total,
             labels={"partner": partner_value},
             timestamp=source_timestamp,
         )

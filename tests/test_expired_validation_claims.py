@@ -53,8 +53,7 @@ def _create_cloud_event(
 def _create_expected_metric_calls(
     mocker: MockerFixture,
     partner: str,
-    internal_value: float,
-    manual_value: float,
+    combined_value: float,
 ) -> list:
     """Create expected metric call matchers."""
     expected_project = "projects/arvo-eng-prd"
@@ -63,16 +62,8 @@ def _create_expected_metric_calls(
         mocker.call(
             name=expected_project,
             time_series=MetricMatcher(
-                metric_type="claims/pipeline/validation/internal/vl_glosa_arvo/expired/total",
-                value=internal_value,
-                labels={"partner": partner},
-            ),
-        ),
-        mocker.call(
-            name=expected_project,
-            time_series=MetricMatcher(
-                metric_type="claims/pipeline/validation/manual/vl_glosa_arvo/expired/total",
-                value=manual_value,
+                metric_type="claims/pipeline/validation/vl_glosa_arvo/expired/total",
+                value=combined_value,
                 labels={"partner": partner},
             ),
         ),
@@ -261,12 +252,11 @@ def test_handle_queries_and_emits_metrics(
             source_timestamp=source_timestamp,
         )
 
-        # Expected: internal = 100 + 200 = 300, manual = 150 + 75 = 225
+        # Expected: internal = 100 + 200 = 300, manual = 150 + 75 = 225, combined = 525
         expected_calls = _create_expected_metric_calls(
             mocker,
             partner="cemig",
-            internal_value=300.0,
-            manual_value=225.0,
+            combined_value=525.0,
         )
 
         response = dispatch_event(event, [ExpiredValidationClaimsHandler])
@@ -342,8 +332,7 @@ def test_handle_emits_zero_when_no_expired_claims(
         expected_calls = _create_expected_metric_calls(
             mocker,
             partner="cemig",
-            internal_value=0.0,
-            manual_value=0.0,
+            combined_value=0.0,
         )
 
         response = dispatch_event(event, [ExpiredValidationClaimsHandler])
@@ -392,8 +381,7 @@ def test_handle_emits_zero_when_tables_are_empty(
         expected_calls = _create_expected_metric_calls(
             mocker,
             partner="cemig",
-            internal_value=0.0,
-            manual_value=0.0,
+            combined_value=0.0,
         )
 
         response = dispatch_event(event, [ExpiredValidationClaimsHandler])
