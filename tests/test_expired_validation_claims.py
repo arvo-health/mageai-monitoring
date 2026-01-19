@@ -91,7 +91,7 @@ def create_expired_validation_table_with_data(
         bigquery.SchemaField("id_fatura", "STRING", mode="NULLABLE"),
         bigquery.SchemaField("vl_glosa_arvo", "FLOAT", mode="NULLABLE"),
         bigquery.SchemaField("ingested_at", "TIMESTAMP", mode="NULLABLE"),
-        bigquery.SchemaField("updated_at", "TIMESTAMP", mode="NULLABLE"),
+        bigquery.SchemaField("updated_at", "DATETIME", mode="NULLABLE"),
         bigquery.SchemaField("status", "STRING", mode="NULLABLE"),
     ]
     table = bigquery.Table(f"{bigquery_client.project}.{dataset_id}.{table_id}", schema=schema)
