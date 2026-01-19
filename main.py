@@ -9,6 +9,7 @@ from flask import make_response
 from bigquery import create_bigquery_client
 from config import Config
 from dispatcher import HandlerDispatcher
+from handlers.expired_validation_claims import ExpiredValidationClaimsHandler
 from handlers.new_beneficiaries_approval import NewBeneficiariesApprovalHandler
 from handlers.new_beneficiaries_wrangling import NewBeneficiariesWranglingHandler
 from handlers.new_providers_approval import NewProvidersApprovalHandler
@@ -23,7 +24,6 @@ from handlers.processable_wrangling import ProcessableWranglingHandler
 from handlers.savings_approval import SavingsApprovalHandler
 from handlers.savings_evaluation import SavingsEvaluationHandler
 from handlers.selected_savings_approval import SelectedSavingsApprovalHandler
-from handlers.expired_validation_claims import ExpiredValidationClaimsHandler
 from handlers.unsent_claims import UnsentClaimsHandler
 from handlers.unsent_savings import UnsentSavingsHandler
 from metrics import create_monitoring_client
