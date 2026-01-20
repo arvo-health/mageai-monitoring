@@ -24,12 +24,16 @@ def _create_cloud_event(
     """Create a CloudEvent for pipeline completion."""
     variables = {
         "partner": partner,
-        "internal_validation_claims_input_table": (
-            f"{bigquery_client.project}.{dataset_id}.{internal_validation_table_id}"
-        ),
-        "manual_validation_claims_input_table": (
-            f"{bigquery_client.project}.{dataset_id}.{manual_validation_table_id}"
-        ),
+        "internal_validation": {
+            "internal_validation_claims_input_table": (
+                f"{bigquery_client.project}.{dataset_id}.{internal_validation_table_id}"
+            ),
+        },
+        "manual_validation": {
+            "manual_validation_claims_input_table": (
+                f"{bigquery_client.project}.{dataset_id}.{manual_validation_table_id}"
+            ),
+        },
     }
 
     return CloudEvent(

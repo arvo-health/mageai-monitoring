@@ -87,8 +87,12 @@ class ExpiredValidationClaimsHandler(Handler):
         variables = payload.get("variables", {})
 
         partner_value = variables.get("partner")
-        internal_validation_table = variables.get("internal_validation_claims_input_table")
-        manual_validation_table = variables.get("manual_validation_claims_input_table")
+        internal_validation = variables.get("internal_validation", {})
+        manual_validation = variables.get("manual_validation", {})
+        internal_validation_table = internal_validation.get(
+            "internal_validation_claims_input_table"
+        )
+        manual_validation_table = manual_validation.get("manual_validation_claims_input_table")
 
         if not partner_value:
             raise HandlerBadRequestError("Missing required 'partner' variable in payload.")
