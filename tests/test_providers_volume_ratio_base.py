@@ -12,9 +12,10 @@ from handlers.providers_volume_ratio_approval import (
 from handlers.providers_volume_ratio_wrangling import (
     ProvidersVolumeRatioWranglingHandler,
 )
-from tests.bigquery import create_provider_table_with_data, create_dataset
+from tests.bigquery import create_dataset, create_provider_table_with_data
 from tests.conftest import assert_response_success
 from tests.metrics import MetricMatcher, assert_metrics_emitted
+
 
 def _create_cloud_event(
     bigquery_client,
@@ -175,7 +176,7 @@ def test_providers_volume_ratio_base_handler_approval(
         ]
 
         historical_unprocessable_rows = [
-             # In Previous Period
+            # In Previous Period
             {
                 "id_arvo": "arvo7",
                 "id_prestador": "prov7",
@@ -183,18 +184,18 @@ def test_providers_volume_ratio_base_handler_approval(
                 "created_at": previous_date,
             },
             {
-              "id_arvo": "arvo8",
-              "id_prestador": "prov8",
-              "categoria": "clinic",
-              "created_at": previous_date,
+                "id_arvo": "arvo8",
+                "id_prestador": "prov8",
+                "categoria": "clinic",
+                "created_at": previous_date,
             },
             # Ignored Period
             {
-              "id_arvo": "arvo9",
-              "id_prestador": "prov9",
-              "categoria": "clinic",
-              "created_at": ignore_date,
-            }
+                "id_arvo": "arvo9",
+                "id_prestador": "prov9",
+                "categoria": "clinic",
+                "created_at": ignore_date,
+            },
         ]
 
         create_provider_table_with_data(
@@ -258,8 +259,7 @@ def test_providers_volume_ratio_base_handler_wrangling(
     mocker: MockerFixture,
     dispatch_event,
 ):
-    """Integration test for ProvidersVolumeRatioBaseHandler via wrangling pipeline.
-    """
+    """Integration test for ProvidersVolumeRatioBaseHandler via wrangling pipeline."""
     dataset_id = "test_dataset_prov_vol_wrangling"
     batch_processable_table_id = "batch_processable"
     batch_unprocessable_table_id = "batch_unprocessable"
@@ -296,7 +296,7 @@ def test_providers_volume_ratio_base_handler_wrangling(
                 "categoria": "hospital",
                 "created_at": previous_date,
             },
-             {
+            {
                 "id_arvo": "arvo3",
                 "id_prestador": "prov3",
                 "categoria": "hospital",
@@ -318,7 +318,10 @@ def test_providers_volume_ratio_base_handler_wrangling(
             bigquery_client, dataset_id, batch_unprocessable_table_id, []
         )
         create_provider_table_with_data(
-            bigquery_client, dataset_id, historical_processable_table_id, historical_processable_rows
+            bigquery_client,
+            dataset_id,
+            historical_processable_table_id,
+            historical_processable_rows,
         )
         create_provider_table_with_data(
             bigquery_client, dataset_id, historical_unprocessable_table_id, []
@@ -378,7 +381,7 @@ def test_providers_volume_ratio_missing_historical(
     try:
         # Only create batch tables
         batch_processable_rows = [
-             {
+            {
                 "id_arvo": "arvo1",
                 "id_prestador": "prov1",
                 "categoria": "hospital",

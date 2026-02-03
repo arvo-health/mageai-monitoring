@@ -215,7 +215,8 @@ class BeneficiariesVolumeRatioBaseHandler(Handler):
                     ratio = float(row.ratio)
 
                     # Emit metric
-                    emit_gauge_metric(monitoring_client=self.monitoring_client,
+                    emit_gauge_metric(
+                        monitoring_client=self.monitoring_client,
                         project_id=self.run_project_id,
                         name="claims/pipeline/beneficiaries/volume_ratio_last_1_mo",
                         value=ratio,

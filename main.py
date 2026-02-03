@@ -178,6 +178,7 @@ def create_handlers(
         ),
     ]
 
+
 # Lazy initialization - these are initialized on first request
 _dispatcher = None
 

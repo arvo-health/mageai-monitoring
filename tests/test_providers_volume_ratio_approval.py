@@ -54,7 +54,8 @@ def test_match(mocker: MockerFixture, decoded_message, expected):
 
 
 def test_handle_delegates_to_base(mocker: MockerFixture):
-    """Test that handle delegates to _handle_providers_volume_ratio_metrics with correct parameters."""
+    """Test that handle delegates to _handle_providers_volume_ratio_metrics with correct
+    parameters."""
     handler = ProvidersVolumeRatioApprovalHandler(
         monitoring_client=mocker.MagicMock(),
         bq_client=mocker.MagicMock(),
@@ -78,9 +79,7 @@ def test_handle_delegates_to_base(mocker: MockerFixture):
     }
 
     # Mock the base handler method
-    mock_handle_metrics = mocker.patch.object(
-        handler, "_handle_providers_volume_ratio_metrics"
-    )
+    mock_handle_metrics = mocker.patch.object(handler, "_handle_providers_volume_ratio_metrics")
     handler.handle(decoded_message)
 
     # Verify it was called with the correct parameters

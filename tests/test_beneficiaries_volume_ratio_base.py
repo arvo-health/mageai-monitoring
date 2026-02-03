@@ -180,7 +180,7 @@ def test_beneficiaries_volume_ratio_base_handler_approval(
         ]
 
         historical_unprocessable_rows = [
-             # In Previous Period
+            # In Previous Period
             {
                 "id_arvo": "arvo7",
                 "id_matricula": "ben7",
@@ -263,8 +263,7 @@ def test_beneficiaries_volume_ratio_base_handler_wrangling(
     mocker: MockerFixture,
     dispatch_event,
 ):
-    """Integration test for BeneficiariesVolumeRatioBaseHandler via wrangling pipeline.
-    """
+    """Integration test for BeneficiariesVolumeRatioBaseHandler via wrangling pipeline."""
     dataset_id = "test_dataset_vol_wrangling"
     batch_processable_table_id = "batch_processable"
     batch_unprocessable_table_id = "batch_unprocessable"
@@ -300,7 +299,7 @@ def test_beneficiaries_volume_ratio_base_handler_wrangling(
                 "categoria": "hospital",
                 "created_at": previous_date,
             },
-             {
+            {
                 "id_arvo": "arvo3",
                 "id_matricula": "ben3",
                 "categoria": "hospital",
@@ -315,7 +314,10 @@ def test_beneficiaries_volume_ratio_base_handler_wrangling(
             bigquery_client, dataset_id, batch_unprocessable_table_id, []
         )
         create_beneficiary_table_with_data(
-            bigquery_client, dataset_id, historical_processable_table_id, historical_processable_rows
+            bigquery_client,
+            dataset_id,
+            historical_processable_table_id,
+            historical_processable_rows,
         )
         create_beneficiary_table_with_data(
             bigquery_client, dataset_id, historical_unprocessable_table_id, []
@@ -376,7 +378,7 @@ def test_beneficiaries_volume_ratio_missing_historical(
     try:
         # Only create batch tables
         batch_processable_rows = [
-             {
+            {
                 "id_arvo": "arvo1",
                 "id_matricula": "ben1",
                 "categoria": "hospital",
