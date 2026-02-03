@@ -9,6 +9,8 @@ from flask import make_response
 from bigquery import create_bigquery_client
 from config import Config
 from dispatcher import HandlerDispatcher
+from handlers.beneficiaries_volume_ratio_approval import BeneficiariesVolumeRatioApprovalHandler
+from handlers.beneficiaries_volume_ratio_wrangling import BeneficiariesVolumeRatioWranglingHandler
 from handlers.expired_validation_claims import ExpiredValidationClaimsHandler
 from handlers.new_beneficiaries_approval import NewBeneficiariesApprovalHandler
 from handlers.new_beneficiaries_wrangling import NewBeneficiariesWranglingHandler
@@ -21,6 +23,8 @@ from handlers.pre_filtered_approval import PreFilteredApprovalHandler
 from handlers.pre_filtered_wrangling import PreFilteredWranglingHandler
 from handlers.processable_approval import ProcessableApprovalHandler
 from handlers.processable_wrangling import ProcessableWranglingHandler
+from handlers.providers_volume_ratio_approval import ProvidersVolumeRatioApprovalHandler
+from handlers.providers_volume_ratio_wrangling import ProvidersVolumeRatioWranglingHandler
 from handlers.savings_approval import SavingsApprovalHandler
 from handlers.savings_evaluation import SavingsEvaluationHandler
 from handlers.selected_savings_approval import SelectedSavingsApprovalHandler
@@ -148,8 +152,31 @@ def create_handlers(
             run_project_id=config.cloud_run_project_id,
             data_project_id=config.bigquery_project_id,
         ),
+        ProvidersVolumeRatioApprovalHandler(
+            monitoring_client=monitoring_client,
+            bq_client=bq_client,
+            run_project_id=config.cloud_run_project_id,
+            data_project_id=config.bigquery_project_id,
+        ),
+        ProvidersVolumeRatioWranglingHandler(
+            monitoring_client=monitoring_client,
+            bq_client=bq_client,
+            run_project_id=config.cloud_run_project_id,
+            data_project_id=config.bigquery_project_id,
+        ),
+        BeneficiariesVolumeRatioApprovalHandler(
+            monitoring_client=monitoring_client,
+            bq_client=bq_client,
+            run_project_id=config.cloud_run_project_id,
+            data_project_id=config.bigquery_project_id,
+        ),
+        BeneficiariesVolumeRatioWranglingHandler(
+            monitoring_client=monitoring_client,
+            bq_client=bq_client,
+            run_project_id=config.cloud_run_project_id,
+            data_project_id=config.bigquery_project_id,
+        ),
     ]
-
 
 # Lazy initialization - these are initialized on first request
 _dispatcher = None
