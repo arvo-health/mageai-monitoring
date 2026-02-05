@@ -176,9 +176,8 @@ class BeneficiariesVolumeRatioBaseHandler(Handler):
         ),
         beneficiary_counts AS (
             SELECT
-                COUNT(DISTINCT l.id_matricula) AS latest_count,
-                COUNT(DISTINCT p.id_matricula) AS previous_count
-            FROM latest_beneficiaries l CROSS JOIN previous_beneficiaries p
+                (SELECT COUNT(DISTINCT id_matricula) FROM latest_beneficiaries) AS latest_count,
+                (SELECT COUNT(DISTINCT id_matricula) FROM previous_beneficiaries) AS previous_count
         )
         SELECT
             latest_count,

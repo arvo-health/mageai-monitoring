@@ -172,9 +172,8 @@ class ProvidersVolumeRatioBaseHandler(Handler):
         ),
         provider_counts AS (
             SELECT
-                COUNT(DISTINCT l.id_prestador) AS latest_count,
-                COUNT(DISTINCT p.id_prestador) AS previous_count
-            FROM latest_providers l CROSS JOIN previous_providers p
+                (SELECT COUNT(DISTINCT id_prestador) FROM latest_providers) AS latest_count,
+                (SELECT COUNT(DISTINCT id_prestador) FROM previous_providers) AS previous_count
         )
         SELECT
             latest_count,
