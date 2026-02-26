@@ -298,21 +298,28 @@ def test_handle_excludes_shared_id_fatura_and_emits_metrics(
 
 
 @pytest.mark.integration
-def test_handle_excludes_pending_validation_invoices(
+def test_handle_includes_approved_items_even_when_invoice_has_pending(
     bigquery_client,
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
     dispatch_event,
 ):
-    """Test that items whose invoice still has SENT_FOR_VALIDATION are excluded.
+    """Test that APPROVED items are included even if their invoice has a SENT_FOR_VALIDATION item.
+
+    Items stuck in SENT_FOR_VALIDATION should NOT cause other APPROVED items in
+    the same invoice to be excluded from the denominator. The metric must account
+    for all APPROVED savings that entered the validation pipeline.
 
     Scenario:
     - internal_validation:
-      * i1: APPROVED, invoice f1 (no pending), 500.0 → included
-      * i2: APPROVED, invoice f2 (has pending item), 200.0 → excluded
-      * i3: SENT_FOR_VALIDATION, invoice f2, 100.0 → makes f2 pending
-    - Denominator = 500
+      * i1: APPROVED, invoice f1, 500.0 → included
+      * i2: APPROVED, invoice f2, 200.0 → included (same invoice as i3)
+      * i3: SENT_FOR_VALIDATION, invoice f2, 100.0 → not counted (wrong status),
+            but does NOT exclude i2
+    - Denominator = 500 + 200 = 700
+    - Submitted: i1 (500.0 SUBMITTED_SUCCESS)
+    - SUBMITTED_SUCCESS = 500/700, SUBMITTED_SUCCESS(i2 not submitted) counted as 0
     """
     dataset_id = "test_dataset_sv_pending"
     internal_table_id = "internal_validation"
@@ -349,7 +356,7 @@ def test_handle_excludes_pending_validation_invoices(
                 "id_fatura": "f2",
                 "vl_glosa_arvo": 100.0,
                 "ingested_at": one_day_before_str,
-                "status": "SENT_FOR_VALIDATION",  # Makes f2 pending
+                "status": "SENT_FOR_VALIDATION",  # Not counted, but does NOT exclude i2
                 "filtered_reason": None,
             },
         ]
@@ -364,6 +371,7 @@ def test_handle_excludes_pending_validation_invoices(
                 "submission_run_id": submission_run_id,
                 "status": "SUBMITTED_SUCCESS",
             },
+            # i2 was NOT submitted — it counts as 0 in the numerator
         ]
 
         create_validation_table_with_data(
@@ -387,13 +395,14 @@ def test_handle_excludes_pending_validation_invoices(
             source_timestamp=source_timestamp,
         )
 
-        # Denominator = 500 (i1 only, f2 invoice excluded)
-        # SUBMITTED_SUCCESS = 500 / 500 = 1.0
+        # Denominator = 500 (i1) + 200 (i2) = 700
+        # i2 is APPROVED in an invoice that has a pending item, but is still counted
+        # SUBMITTED_SUCCESS = 500 / 700
         expected_calls = _create_expected_metric_calls(
             mocker,
             partner="petro",
             values=[
-                {"status": "SUBMITTED_SUCCESS", "perc": 1.0},
+                {"status": "SUBMITTED_SUCCESS", "perc": 500.0 / 700.0},
             ],
         )
 

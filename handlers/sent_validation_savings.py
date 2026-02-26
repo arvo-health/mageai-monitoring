@@ -33,11 +33,13 @@ class SentValidationSavingsHandler(Handler):
     submitted_claims matching the submission_run_id, or falls back to source_timestamp
     minus 20 minutes if there are no submitted claims for the submission_run_id.
 
-    Items whose invoice (id_fatura) still has any item in SENT_FOR_VALIDATION status
-    are excluded from the denominator (they are still pending review).
-
     Items with filtered_reason = 'SHARED_ID_FATURA' are excluded from both the
     numerator and denominator (tracked separately by SharedIdFaturaCompletenessHandler).
+
+    Items in SENT_FOR_VALIDATION status are not counted (they have not been approved
+    yet), but their presence does NOT exclude other APPROVED items in the same invoice.
+    All APPROVED/SUBMITTED_SUCCESS items are included regardless of their invoice's
+    overall state.
 
     If there are no eligible validation savings (denominator is 0), emits one metric
     point with value 1.0 and status=SUBMITTED_SUCCESS.
@@ -148,7 +150,9 @@ class SentValidationSavingsHandler(Handler):
             twenty_minutes_ago = twenty_minutes_ago.replace(tzinfo=UTC)
 
         # Query: denominator = internal + manual validation items (APPROVED/SUBMITTED_SUCCESS)
-        # that are not SHARED_ID_FATURA and not in invoices still pending validation.
+        # that are not SHARED_ID_FATURA. Items still in SENT_FOR_VALIDATION are not
+        # counted (wrong status), but they do NOT cause other APPROVED items in the same
+        # invoice to be excluded.
         # Numerator = submitted items that match those id_arvos, grouped by status.
         query = f"""
         WITH submitted_timestamps AS (
@@ -161,38 +165,19 @@ class SentValidationSavingsHandler(Handler):
                  latest_ingested_at AS end_date
           FROM submitted_timestamps
         ),
-        pending_claim_ids AS (
-          SELECT id_fatura
+        validation_savings AS (
+          SELECT id_arvo, vl_glosa_arvo
           FROM `{full_internal}`
           CROSS JOIN date_range AS dr
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
-          GROUP BY id_fatura
-          HAVING COUNT(CASE WHEN status = 'SENT_FOR_VALIDATION' THEN 1 END) > 0
-          UNION DISTINCT
-          SELECT id_fatura
-          FROM `{full_manual}`
-          CROSS JOIN date_range AS dr
-          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
-          GROUP BY id_fatura
-          HAVING COUNT(CASE WHEN status = 'SENT_FOR_VALIDATION' THEN 1 END) > 0
-        ),
-        validation_savings AS (
-          SELECT id_arvo, vl_glosa_arvo
-          FROM `{full_internal}` iv
-          CROSS JOIN date_range AS dr
-          LEFT JOIN pending_claim_ids pci ON iv.id_fatura = pci.id_fatura
-          WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
             AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
-            AND pci.id_fatura IS NULL
             AND (filtered_reason IS NULL OR filtered_reason != 'SHARED_ID_FATURA')
           UNION ALL
           SELECT id_arvo, vl_glosa_arvo
-          FROM `{full_manual}` mv
+          FROM `{full_manual}`
           CROSS JOIN date_range AS dr
-          LEFT JOIN pending_claim_ids pci ON mv.id_fatura = pci.id_fatura
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
             AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
-            AND pci.id_fatura IS NULL
             AND (filtered_reason IS NULL OR filtered_reason != 'SHARED_ID_FATURA')
         ),
         total_validation AS (
