@@ -339,9 +339,7 @@ def test_handle_partial_shared_id_fatura_submitted_emits_partial(
         create_validation_table_with_data(
             bigquery_client, dataset_id, internal_table_id, rows=internal_rows
         )
-        create_validation_table_with_data(
-            bigquery_client, dataset_id, manual_table_id, rows=[]
-        )
+        create_validation_table_with_data(bigquery_client, dataset_id, manual_table_id, rows=[])
         create_submitted_table_with_data(
             bigquery_client, dataset_id, submitted_table_id, rows=submitted_rows
         )
@@ -417,9 +415,7 @@ def test_handle_no_shared_id_fatura_items_emits_one(
         create_validation_table_with_data(
             bigquery_client, dataset_id, internal_table_id, rows=internal_rows
         )
-        create_validation_table_with_data(
-            bigquery_client, dataset_id, manual_table_id, rows=[]
-        )
+        create_validation_table_with_data(bigquery_client, dataset_id, manual_table_id, rows=[])
         create_submitted_table_with_data(
             bigquery_client, dataset_id, submitted_table_id, rows=submitted_rows
         )

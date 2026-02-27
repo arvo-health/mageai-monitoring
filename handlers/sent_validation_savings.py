@@ -218,9 +218,7 @@ class SentValidationSavingsHandler(Handler):
         result = list(job.result())
 
         total_validation = float(result[0].total_validation or 0.0) if result else 0.0
-        submitted_by_status = {
-            row.status: float(row.total_submitted or 0.0) for row in result
-        }
+        submitted_by_status = {row.status: float(row.total_submitted or 0.0) for row in result}
 
         has_submitted_values = any(v > 0.0 for v in submitted_by_status.values())
 
