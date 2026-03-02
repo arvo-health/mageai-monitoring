@@ -20,12 +20,15 @@ class SharedIdFaturaCompletenessHandler(Handler):
 
     When the pipesv2_submission pipeline completes, this handler queries BigQuery
     to verify that 100% of savings in internal_validation and manual_validation tables
-    with filtered_reason = 'SHARED_ID_FATURA' (and status APPROVED or SUBMITTED_SUCCESS)
+    with filtered_reason = 'SHARED_ID_FATURA' (and status != 'SENT_FOR_VALIDATION')
     were submitted to the partner within the last 2 days.
 
     SHARED_ID_FATURA items are savings that were flagged because they share an invoice
     (id_fatura) with another saving that was filtered for a specific reason. The business
-    rule is that 100% of these items must be submitted once they are approved.
+    rule is that 100% of these items must be submitted — including those with status
+    NOT_SENT_FOR_VALIDATION, which means they were marked at selection time but are still
+    expected to reach submitted_claims. Only items still pending review (SENT_FOR_VALIDATION)
+    are excluded from the denominator.
 
     To determine the time window, it uses the latest ingested_at timestamp from
     submitted_claims matching the submission_run_id, or falls back to source_timestamp
@@ -164,14 +167,14 @@ class SharedIdFaturaCompletenessHandler(Handler):
           CROSS JOIN date_range AS dr
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
             AND filtered_reason = 'SHARED_ID_FATURA'
-            AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
+            AND status != 'SENT_FOR_VALIDATION'
           UNION ALL
           SELECT id_arvo, vl_glosa_arvo
           FROM `{full_manual}`
           CROSS JOIN date_range AS dr
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
             AND filtered_reason = 'SHARED_ID_FATURA'
-            AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
+            AND status != 'SENT_FOR_VALIDATION'
         ),
         total_shared AS (
           SELECT COALESCE(SUM(vl_glosa_arvo), 0) AS total

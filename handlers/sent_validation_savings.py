@@ -36,10 +36,11 @@ class SentValidationSavingsHandler(Handler):
     Items with filtered_reason = 'SHARED_ID_FATURA' are excluded from both the
     numerator and denominator (tracked separately by SharedIdFaturaCompletenessHandler).
 
-    Items in SENT_FOR_VALIDATION status are not counted (they have not been approved
-    yet), but their presence does NOT exclude other APPROVED items in the same invoice.
-    All APPROVED/SUBMITTED_SUCCESS items are included regardless of their invoice's
-    overall state.
+    Denominator = all items in internal + manual validation that were analyzed, meaning
+    status NOT IN ('SENT_FOR_VALIDATION', 'NOT_SENT_FOR_VALIDATION'). This includes:
+    APPROVED, DENIED, EXCLUDED, EXPIRED, RELEASE_TRAIN, SUBMITTED_SUCCESS, SUBMITTED_ERROR.
+    Items with SENT_FOR_VALIDATION (still pending review) and NOT_SENT_FOR_VALIDATION
+    (filtered before reaching the validator) are excluded from the denominator.
 
     If there are no eligible validation savings (denominator is 0), emits one metric
     point with value 1.0 and status=SUBMITTED_SUCCESS.
@@ -149,10 +150,10 @@ class SentValidationSavingsHandler(Handler):
         if twenty_minutes_ago.tzinfo is None:
             twenty_minutes_ago = twenty_minutes_ago.replace(tzinfo=UTC)
 
-        # Query: denominator = internal + manual validation items (APPROVED/SUBMITTED_SUCCESS)
-        # that are not SHARED_ID_FATURA. Items still in SENT_FOR_VALIDATION are not
-        # counted (wrong status), but they do NOT cause other APPROVED items in the same
-        # invoice to be excluded.
+        # Query: denominator = internal + manual validation items that were analyzed, i.e.
+        # status NOT IN ('SENT_FOR_VALIDATION', 'NOT_SENT_FOR_VALIDATION'), excluding
+        # SHARED_ID_FATURA items (tracked separately). This covers: APPROVED, DENIED,
+        # EXCLUDED, EXPIRED, RELEASE_TRAIN, SUBMITTED_SUCCESS, SUBMITTED_ERROR.
         # Numerator = submitted items that match those id_arvos, grouped by status.
         query = f"""
         WITH submitted_timestamps AS (
@@ -170,14 +171,14 @@ class SentValidationSavingsHandler(Handler):
           FROM `{full_internal}`
           CROSS JOIN date_range AS dr
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
-            AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
+            AND status NOT IN ('SENT_FOR_VALIDATION', 'NOT_SENT_FOR_VALIDATION')
             AND (filtered_reason IS NULL OR filtered_reason != 'SHARED_ID_FATURA')
           UNION ALL
           SELECT id_arvo, vl_glosa_arvo
           FROM `{full_manual}`
           CROSS JOIN date_range AS dr
           WHERE ingested_at BETWEEN dr.start_date AND dr.end_date
-            AND status IN ('SUBMITTED_SUCCESS', 'APPROVED')
+            AND status NOT IN ('SENT_FOR_VALIDATION', 'NOT_SENT_FOR_VALIDATION')
             AND (filtered_reason IS NULL OR filtered_reason != 'SHARED_ID_FATURA')
         ),
         total_validation AS (

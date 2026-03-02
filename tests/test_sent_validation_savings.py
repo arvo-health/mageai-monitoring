@@ -159,25 +159,31 @@ def test_match(mocker: MockerFixture, decoded_message, expected):
 
 
 @pytest.mark.integration
-def test_handle_excludes_shared_id_fatura_and_emits_metrics(
+def test_handle_denominator_includes_all_analyzed_statuses(
     bigquery_client,
     mock_monitoring_client,
     flask_app,
     mocker: MockerFixture,
     dispatch_event,
 ):
-    """Test that SHARED_ID_FATURA items are excluded and the metric is emitted correctly.
+    """Test that all analyzed statuses are included in the denominator, SHARED_ID_FATURA excluded.
+
+    The denominator counts items with status NOT IN ('SENT_FOR_VALIDATION',
+    'NOT_SENT_FOR_VALIDATION'), covering: APPROVED, EXCLUDED, EXPIRED, DENIED,
+    RELEASE_TRAIN, SUBMITTED_SUCCESS, SUBMITTED_ERROR.
 
     Scenario:
-    - internal_validation has 3 items:
-      * i1: APPROVED, no filtered_reason, 500.0 → included in denominator
-      * i2: APPROVED, filtered_reason=SHARED_ID_FATURA, 300.0 → excluded
-      * i3: APPROVED, no filtered_reason, 200.0 → included in denominator
-    - manual_validation has 1 item:
-      * m1: SUBMITTED_SUCCESS, no filtered_reason, 400.0 → included in denominator
-    - Denominator = 500 + 200 + 400 = 1100
+    - internal_validation:
+      * i1: APPROVED, 500.0 → included in denominator
+      * i2: APPROVED, SHARED_ID_FATURA, 300.0 → excluded (tracked separately)
+      * i3: EXCLUDED, 200.0 → included in denominator
+      * i4: EXPIRED, 150.0 → included in denominator
+      * i5: SENT_FOR_VALIDATION, 100.0 → excluded (not yet analyzed)
+    - manual_validation:
+      * m1: SUBMITTED_SUCCESS, 400.0 → included in denominator
+    - Denominator = 500 + 200 + 150 + 400 = 1250
     - submitted: i1 (400.0 SUBMITTED_SUCCESS), i3 (100.0 RETRY)
-    - Percentages: SUCCESS = 400/1100, RETRY = 100/1100
+    - Percentages: SUBMITTED_SUCCESS = 400/1250, RETRY = 100/1250
     """
 
     dataset_id = "test_dataset_sv"
@@ -209,22 +215,38 @@ def test_handle_excludes_shared_id_fatura_and_emits_metrics(
                 "vl_glosa_arvo": 300.0,
                 "ingested_at": one_day_before_str,
                 "status": "APPROVED",
-                "filtered_reason": "SHARED_ID_FATURA",  # Excluded
+                "filtered_reason": "SHARED_ID_FATURA",  # Excluded (SHARED_ID_FATURA)
             },
             {
                 "id_arvo": "i3",
                 "id_fatura": "f3",
                 "vl_glosa_arvo": 200.0,
                 "ingested_at": submitted_ingested_at_str,
-                "status": "APPROVED",
-                "filtered_reason": None,  # Included
+                "status": "EXCLUDED",
+                "filtered_reason": None,  # Included (analyzed, not submitted)
+            },
+            {
+                "id_arvo": "i4",
+                "id_fatura": "f4",
+                "vl_glosa_arvo": 150.0,
+                "ingested_at": one_day_before_str,
+                "status": "EXPIRED",
+                "filtered_reason": None,  # Included (analyzed, not submitted)
+            },
+            {
+                "id_arvo": "i5",
+                "id_fatura": "f5",
+                "vl_glosa_arvo": 100.0,
+                "ingested_at": one_day_before_str,
+                "status": "SENT_FOR_VALIDATION",
+                "filtered_reason": None,  # Excluded (not yet analyzed)
             },
         ]
 
         manual_rows = [
             {
                 "id_arvo": "m1",
-                "id_fatura": "f4",
+                "id_fatura": "f6",
                 "vl_glosa_arvo": 400.0,
                 "ingested_at": one_day_before_str,
                 "status": "SUBMITTED_SUCCESS",
@@ -248,7 +270,7 @@ def test_handle_excludes_shared_id_fatura_and_emits_metrics(
                 "status": "RETRY",
             },
             {
-                "id_arvo": "i2",  # SHARED_ID_FATURA item — should not be counted in this metric
+                "id_arvo": "i2",  # SHARED_ID_FATURA — not counted in this metric
                 "vl_glosa_arvo": 300.0,
                 "ingested_at": one_day_before_str,
                 "submission_run_id": submission_run_id,
@@ -277,15 +299,16 @@ def test_handle_excludes_shared_id_fatura_and_emits_metrics(
             source_timestamp=source_timestamp,
         )
 
-        # Denominator = 500 (i1) + 200 (i3) + 400 (m1) = 1100
-        # SUBMITTED_SUCCESS = 400 / 1100
-        # RETRY = 100 / 1100
+        # Denominator = 500 (i1 APPROVED) + 200 (i3 EXCLUDED) + 150 (i4 EXPIRED) + 400 (m1) = 1250
+        # i2 excluded (SHARED_ID_FATURA), i5 excluded (SENT_FOR_VALIDATION)
+        # SUBMITTED_SUCCESS = 400 / 1250
+        # RETRY = 100 / 1250
         expected_calls = _create_expected_metric_calls(
             mocker,
             partner="petro",
             values=[
-                {"status": "SUBMITTED_SUCCESS", "perc": 400.0 / 1100.0},
-                {"status": "RETRY", "perc": 100.0 / 1100.0},
+                {"status": "SUBMITTED_SUCCESS", "perc": 400.0 / 1250.0},
+                {"status": "RETRY", "perc": 100.0 / 1250.0},
             ],
         )
 

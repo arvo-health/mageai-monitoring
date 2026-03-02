@@ -369,6 +369,103 @@ def test_handle_partial_shared_id_fatura_submitted_emits_partial(
 
 
 @pytest.mark.integration
+def test_handle_not_sent_for_validation_items_are_in_denominator(
+    bigquery_client,
+    mock_monitoring_client,
+    flask_app,
+    mocker: MockerFixture,
+    dispatch_event,
+):
+    """Test that NOT_SENT_FOR_VALIDATION SHARED_ID_FATURA items are counted in denominator.
+
+    SHARED_ID_FATURA items may have NOT_SENT_FOR_VALIDATION status (filtered at selection
+    time) but are still expected to be submitted. If they are not in submitted_claims,
+    completeness must be < 1.0 and the alert should fire.
+
+    Scenario:
+    - internal_validation:
+      * i1: NOT_SENT_FOR_VALIDATION, SHARED_ID_FATURA, 400.0 → in denominator (not submitted)
+      * i2: SUBMITTED_SUCCESS, SHARED_ID_FATURA, 600.0 → in denominator (submitted)
+    - SHARED_ID_FATURA total = 400 + 600 = 1000
+    - Only i2 submitted → completeness = 600 / 1000 = 0.6
+    """
+    dataset_id = "test_dataset_sifc_not_sent"
+    internal_table_id = "internal_validation"
+    manual_table_id = "manual_validation"
+    submitted_table_id = "submitted_claims"
+    submission_run_id = "run_D"
+    source_timestamp = "2024-01-15T10:30:00Z"
+
+    create_dataset(bigquery_client, dataset_id)
+
+    try:
+        submitted_ingested_at = datetime.fromisoformat("2024-01-14T20:00:00Z")
+        one_day_before_str = (submitted_ingested_at - timedelta(days=1)).isoformat()
+
+        internal_rows = [
+            {
+                "id_arvo": "i1",
+                "id_fatura": "f1",
+                "vl_glosa_arvo": 400.0,
+                "ingested_at": one_day_before_str,
+                "status": "NOT_SENT_FOR_VALIDATION",  # In denominator — not submitted
+                "filtered_reason": "SHARED_ID_FATURA",
+            },
+            {
+                "id_arvo": "i2",
+                "id_fatura": "f2",
+                "vl_glosa_arvo": 600.0,
+                "ingested_at": one_day_before_str,
+                "status": "SUBMITTED_SUCCESS",  # In denominator — submitted
+                "filtered_reason": "SHARED_ID_FATURA",
+            },
+        ]
+
+        submitted_rows = [
+            {
+                "id_arvo": "i2",
+                "vl_glosa_arvo": 600.0,
+                "ingested_at": one_day_before_str,
+                "submission_run_id": submission_run_id,
+                "status": "SUBMITTED_SUCCESS",
+            },
+            # i1 was NOT submitted → completeness < 1.0
+        ]
+
+        create_validation_table_with_data(
+            bigquery_client, dataset_id, internal_table_id, rows=internal_rows
+        )
+        create_validation_table_with_data(bigquery_client, dataset_id, manual_table_id, rows=[])
+        create_submitted_table_with_data(
+            bigquery_client, dataset_id, submitted_table_id, rows=submitted_rows
+        )
+
+        event = _create_cloud_event(
+            bigquery_client=bigquery_client,
+            dataset_id=dataset_id,
+            partner="petro",
+            internal_validation_table_id=internal_table_id,
+            manual_validation_table_id=manual_table_id,
+            submitted_table_id=submitted_table_id,
+            submission_run_id=submission_run_id,
+            source_timestamp=source_timestamp,
+        )
+
+        # Denominator = 400 (i1 NOT_SENT_FOR_VALIDATION) + 600 (i2 SUBMITTED_SUCCESS) = 1000
+        # Submitted = 600 (i2 only) → completeness = 0.6
+        expected_calls = _create_expected_completeness_call(
+            mocker, partner="petro", completeness=0.6
+        )
+
+        response = dispatch_event(event, [SharedIdFaturaCompletenessHandler])
+
+        assert_response_success(response)
+        assert_metrics_emitted(mock_monitoring_client, expected_calls)
+    finally:
+        bigquery_client.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
+
+
+@pytest.mark.integration
 def test_handle_no_shared_id_fatura_items_emits_one(
     bigquery_client,
     mock_monitoring_client,
